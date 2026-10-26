@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27967e29c3b99ed49a952c9caaeeb6fd, type: 3}
+  m_Name: AssaultRifle
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.Weapons.WeaponDefinition
+  weaponId: assault_rifle
+  displayName: Assault Rifle
+  slot: 0
+  fireMode: 1
+  fireRate: 4.5
+  magazineSize: 31
+  reserveAmmo: 93
+  reloadTime: 2.3
+  equipTime: 0.6
+  damage:
+    head: 165
+    torso: 55
+    legs: 35
+  falloff:
+    falloffStart: 1000
+    falloffEnd: 1000
+    minMultiplier: 1
+  maxRange: 200
+  spread:
+    baseSpread: 0.15
+    movingSpread: 2.5
+    airborneSpread: 6
+    bloomPerShot: 0.35
+    maxBloom: 3
+    crouchMultiplier: 0.7
+  recoil:
+    verticalPerShot: 0.55
+    maxVertical: 5
+    horizontalAmplitude: 0.6
+    resetTime: 0.4
+    recoveryRate: 14
+  blockFireWhileSprinting: 1
+  viewmodelColor: {r: 0.16, g: 0.18, b: 0.2, a: 1}
+  viewmodelSize: {x: 0.06, y: 0.1, z: 0.45}
+  fireSoundPitch: 1
+  fireSoundVolume: 1

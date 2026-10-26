@@ -1,0 +1,645 @@
+using System;
+using System.Collections.Generic;
+using BlueHorizon.Abilities;
+using BlueHorizon.Combat;
+using BlueHorizon.Core;
+using BlueHorizon.Match;
+using BlueHorizon.Movement;
+using BlueHorizon.Testing;
+using BlueHorizon.Weapons;
+using Unity.Netcode;
+using UnityEngine;
+
+namespace BlueHorizon.Player
+{
+    /// <summary>
+    /// Server-authoritative character simulation with owner-side prediction.
+    ///
+    /// Owner client, every network tick: sample input → simulate locally (prediction) → store in history →
+    /// send the last <see cref="InputBundle.Capacity"/> commands unreliably.
+    /// Server, every network tick: process queued commands (bounded by a token budget so a client cannot
+    /// simulate faster than real time) → movement, weapons, abilities → send authoritative state to the owner
+    /// and snapshots to everyone else.
+    /// Owner, on authoritative state: compare with the predicted state for that command; on mismatch, rewind
+    /// to the server state and replay the unacknowledged commands.
+    /// Other clients: interpolate snapshots <see cref="InterpolationDelay"/> seconds in the past.
+    /// </summary>
+    [RequireComponent(typeof(CharacterController))]
+    public sealed class PlayerSimulation : NetworkBehaviour
+    {
+        const int HistorySize = 256;
+        const int MaxQueuedCommands = 24;
+        const int MaxCommandBudget = 6;
+        const int MaxCommandsPerTick = 3;
+        const int RemoteSnapshotInterval = 2;
+        const int SnapshotBufferSize = 32;
+        public const float InterpolationDelay = 0.1f;
+        /// <summary>
+        /// Clients send input every tick, so silence means the client is gone. Disconnecting after this long stops the
+        /// server from streaming to a dead endpoint for the full 30 s transport timeout (see RISKS.md, R-07).
+        /// </summary>
+        const float InputSilenceTimeout = 5f;
+
+        struct HistoryEntry
+        {
+            public PlayerInputCommand command;
+            public MotorState motor;
+            public WeaponSimState weapons;
+            public float simTime;
+        }
+
+        public struct OwnerState : INetworkSerializable
+        {
+            public uint lastSequence;
+            public byte teleportId;
+            public float simTime;
+            public float yaw;
+            public MotorState motor;
+            public WeaponSimState weapons;
+
+            public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+            {
+                serializer.SerializeValue(ref lastSequence);
+                serializer.SerializeValue(ref teleportId);
+                serializer.SerializeValue(ref simTime);
+                serializer.SerializeValue(ref yaw);
+                serializer.SerializeNetworkSerializable(ref motor);
+                serializer.SerializeNetworkSerializable(ref weapons);
+            }
+        }
+
+        public struct RemoteSnapshot : INetworkSerializable
+        {
+            public double time;
+            public byte teleportId;
+            public Vector3 position;
+            public float yaw;
+            public float pitch;
+            public float crouch;
+            public byte activeSlot;
+            public bool grounded;
+            public bool reloading;
+
+            public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+            {
+                serializer.SerializeValue(ref time);
+                serializer.SerializeValue(ref teleportId);
+                serializer.SerializeValue(ref position);
+                serializer.SerializeValue(ref yaw);
+                serializer.SerializeValue(ref pitch);
+                serializer.SerializeValue(ref crouch);
+                serializer.SerializeValue(ref activeSlot);
+                serializer.SerializeValue(ref grounded);
+                serializer.SerializeValue(ref reloading);
+            }
+        }
+
+        CharacterController _cc;
+        PlayerAvatar _avatar;
+        PlayerRig _rig;
+        IPlayerInputSource _input;
+
+        MotorState _motor;
+        WeaponSimState _weapons;
+        float _simTime;
+        byte _teleportId;
+        PlayerInputCommand _lastCommand;
+        InputButtons _previousButtons;
+
+        // Owner prediction.
+        readonly HistoryEntry[] _history = new HistoryEntry[HistorySize];
+        readonly PlayerInputCommand[] _recentCommands = new PlayerInputCommand[InputBundle.Capacity];
+        uint _nextSequence = 1;
+        uint _lastAckSequence;
+        Vector3 _renderFrom, _renderTo;
+        float _renderTickTime;
+
+        // Server.
+        readonly Queue<PlayerInputCommand> _queue = new();
+        uint _lastReceivedSequence;
+        uint _lastProcessedSequence;
+        int _budget;
+        int _ticksSinceSnapshot;
+        double _lastInputTime;
+
+        // Remote interpolation.
+        readonly RemoteSnapshot[] _snapshots = new RemoteSnapshot[SnapshotBufferSize];
+        int _snapshotCount;
+        float _remoteYaw, _remotePitch;
+        byte _remoteSlot;
+        bool _remoteReloading;
+
+        public int CorrectionCount { get; private set; }
+        /// <summary>Diagnostics: input bundles received (server) / authoritative states received (owner).</summary>
+        public int MessagesReceived { get; private set; }
+        public MovementSettings Movement => _avatar.Agent != null ? _avatar.Agent.movement : DefaultMovement;
+        static readonly MovementSettings DefaultMovement = new();
+
+        public Vector3 Position => _motor.position;
+        public Vector3 Velocity => _motor.velocity;
+        public bool Grounded => _motor.grounded;
+        public float Crouch => _motor.crouch;
+        public WeaponSimState Weapons => _weapons;
+        public byte ActiveSlot => IsOwner || IsServer ? _weapons.activeSlot : _remoteSlot;
+        public bool IsReloading => IsOwner || IsServer ? _weapons.IsReloading : _remoteReloading;
+        public float SimTime => _simTime;
+
+        /// <summary>Server: the Interact button is held in the latest processed command.</summary>
+        public bool InteractHeld { get; private set; }
+
+        /// <summary>View angles for presentation: live input for the owner, interpolated for others.</summary>
+        public float ViewYaw => IsOwner && _input != null ? _input.Yaw + _weapons.recoilYaw : IsServer ? _lastCommand.yaw : _remoteYaw;
+        public float ViewPitch => IsOwner && _input != null ? _input.Pitch + _weapons.recoilPitch : IsServer ? _lastCommand.pitch : _remotePitch;
+
+        public Vector3 EyePosition => _motor.position + Vector3.up * PlayerMotor.EyeHeight(Movement, _motor.crouch);
+
+        /// <summary>Smoothed eye position for the owner's camera (interpolated between predicted ticks).</summary>
+        public Vector3 RenderEyePosition
+        {
+            get
+            {
+                float dt = TickInterval;
+                float alpha = Mathf.Clamp01((Time.time - _renderTickTime) / dt);
+                return Vector3.Lerp(_renderFrom, _renderTo, alpha) + Vector3.up * PlayerMotor.EyeHeight(Movement, _motor.crouch);
+            }
+        }
+
+        public Vector3 AimDirection => WeaponSimulation.ViewRotation(_lastCommand.yaw, _lastCommand.pitch) * Vector3.forward;
+
+        /// <summary>Owner: a predicted shot was fired this tick (play local effects).</summary>
+        public event Action<ShotEvent> LocalShotPredicted;
+        /// <summary>Non-owner clients: a remote player fired (origin, end point, slot, suppressed, hitPlayer).</summary>
+        public event Action<Vector3, Vector3, byte, bool, bool> RemoteShot;
+        /// <summary>Owner: the server teleported us (spawn, round start).</summary>
+        public event Action Teleported;
+
+        float TickInterval => NetworkManager != null ? 1f / NetworkManager.NetworkConfig.TickRate : 1f / 60f;
+
+        void Awake()
+        {
+            _cc = GetComponent<CharacterController>();
+            _avatar = GetComponent<PlayerAvatar>();
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            _rig = GetComponent<PlayerRig>();
+            _cc.minMoveDistance = 0f;
+            _cc.skinWidth = 0.03f;
+            _cc.stepOffset = 0.35f;
+            _cc.slopeLimit = 46f;
+            PlayerMotor.ApplyShape(_cc, Movement, 0f);
+
+            _motor.position = transform.position;
+            _renderFrom = _renderTo = transform.position;
+            ResetWeapons();
+
+            NetworkManager.NetworkTickSystem.Tick += OnNetworkTick;
+
+            if (IsOwner)
+            {
+                LaunchConfig config = LaunchConfig.Current;
+                _input = config.bot
+                    ? new TestBotInputSource(this, _avatar)
+                    : new KeyboardMouseInputSource(Movement.minPitch, Movement.maxPitch);
+                _input.SetLook(transform.eulerAngles.y, 0f);
+            }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            if (NetworkManager != null && NetworkManager.NetworkTickSystem != null)
+                NetworkManager.NetworkTickSystem.Tick -= OnNetworkTick;
+            _input?.Dispose();
+            _input = null;
+        }
+
+        void ResetWeapons()
+        {
+            GameContent content = GameContent.Instance;
+            _weapons = content != null ? WeaponSimulation.Fresh(content.primaryWeapon, content.secondaryWeapon) : default;
+            _simTime = 0f;
+        }
+
+        void Update()
+        {
+            if (!IsSpawned) return;
+
+            if (IsOwner)
+                _input?.UpdateFrame(Time.deltaTime);
+            else if (!IsServer)
+                InterpolateRemote();
+
+            if (IsServer && !IsOwner)
+                transform.rotation = Quaternion.Euler(0f, _lastCommand.yaw, 0f);
+
+            _rig?.SetHeightScale(PlayerMotor.Height(Movement, IsOwner || IsServer ? _motor.crouch : RemoteCrouch) / PlayerRig.StandingHeight);
+        }
+
+        // ───────────── Tick ─────────────
+
+        void OnNetworkTick()
+        {
+            float dt = TickInterval;
+            if (IsServer)
+            {
+                if (IsOwner)
+                {
+                    // Host's own player: no network hop, simulate the local command directly.
+                    PlayerInputCommand cmd = BuildLocalCommand();
+                    ServerSimulate(cmd, dt);
+                    PushRender();
+                }
+                else
+                {
+                    ServerProcessQueue(dt);
+                }
+                ServerBroadcast();
+            }
+            else if (IsOwner)
+            {
+                OwnerPredictTick(dt);
+            }
+        }
+
+        PlayerInputCommand BuildLocalCommand()
+        {
+            var cmd = new PlayerInputCommand { sequence = _nextSequence++ };
+            _input?.Fill(ref cmd);
+            cmd.Sanitize(Movement.minPitch, Movement.maxPitch);
+            return cmd;
+        }
+
+        void PushRender()
+        {
+            _renderFrom = _renderTo;
+            _renderTo = _motor.position;
+            _renderTickTime = Time.time;
+        }
+
+        /// <summary>One step of movement + weapons from a command. Used by server authority and client prediction/replay.</summary>
+        void Simulate(in PlayerInputCommand cmd, float dt, bool authoritative, bool firstPrediction)
+        {
+            bool alive = _avatar.IsAlive;
+            MatchManager match = MatchManager.Instance;
+            bool canMove = alive && (match == null || match.CanMove);
+            bool canFight = alive && (match == null || match.CanFight);
+
+            if (alive && _cc.enabled)
+            {
+                var motorCtx = new MotorContext { canMove = canMove };
+                PlayerMotor.Step(ref _motor, cmd, dt, Movement, _cc, motorCtx);
+            }
+
+            _simTime += dt;
+
+            float horizontalSpeed = new Vector2(_motor.velocity.x, _motor.velocity.z).magnitude;
+            var weaponCtx = new WeaponContext
+            {
+                canFire = canFight,
+                sprinting = PlayerMotor.IsSprinting(cmd, _motor),
+                grounded = _motor.grounded,
+                crouched = _motor.crouch > 0.5f,
+                moveFraction = horizontalSpeed / Mathf.Max(0.01f, Movement.runSpeed),
+            };
+            WeaponStats primary = _avatar.PrimaryStats;
+            WeaponStats secondary = _avatar.SecondaryStats;
+            WeaponSimulation.Step(ref _weapons, cmd, _simTime, dt, primary, secondary, weaponCtx, out ShotEvent shot);
+
+            if (shot.fired)
+            {
+                if (authoritative)
+                    CombatSystem.ServerResolveShot(_avatar, EyePosition, shot);
+                if (firstPrediction && IsOwner)
+                    LocalShotPredicted?.Invoke(shot);
+            }
+
+            if (authoritative)
+                ServerHandleActions(cmd, alive);
+
+            _lastCommand = cmd;
+        }
+
+        // ───────────── Server ─────────────
+
+        void ServerSimulate(PlayerInputCommand cmd, float dt)
+        {
+            cmd.Sanitize(Movement.minPitch, Movement.maxPitch);
+            Simulate(cmd, dt, authoritative: true, firstPrediction: true);
+            _lastProcessedSequence = cmd.sequence;
+        }
+
+        void ServerProcessQueue(float dt)
+        {
+            double now = NetworkManager.ServerTime.Time;
+            if (_lastInputTime == 0) _lastInputTime = now;
+            if (now - _lastInputTime > InputSilenceTimeout)
+            {
+                BHLog.Warn("Server", $"No input from client {OwnerClientId} for {InputSilenceTimeout}s; disconnecting");
+                _lastInputTime = now;
+                NetworkManager.DisconnectClient(OwnerClientId, "Connection timed out (no input received).");
+                return;
+            }
+
+            _budget = Mathf.Min(_budget + 1, MaxCommandBudget);
+            int processed = 0;
+            while (_queue.Count > 0 && _budget > 0 && processed < MaxCommandsPerTick)
+            {
+                ServerSimulate(_queue.Dequeue(), dt);
+                _budget--;
+                processed++;
+            }
+        }
+
+        void ServerHandleActions(in PlayerInputCommand cmd, bool alive)
+        {
+            InputButtons pressed = cmd.buttons & ~_previousButtons;
+            _previousButtons = cmd.buttons;
+            InteractHeld = alive && cmd.Has(InputButtons.Interact);
+
+            if (!alive) return;
+
+            Vector3 eye = EyePosition;
+            Vector3 aim = WeaponSimulation.ViewRotation(cmd.yaw, cmd.pitch) * Vector3.forward;
+            if ((pressed & InputButtons.Ability1) != 0) _avatar.Abilities.ServerTryActivate(AbilitySlot.Utility1, eye, aim);
+            if ((pressed & InputButtons.Ability2) != 0) _avatar.Abilities.ServerTryActivate(AbilitySlot.Utility2, eye, aim);
+            if ((pressed & InputButtons.Signature) != 0) _avatar.Abilities.ServerTryActivate(AbilitySlot.Signature, eye, aim);
+
+            if ((pressed & InputButtons.ToggleAttachment) != 0)
+            {
+                MatchManager match = MatchManager.Instance;
+                if (match == null || match.LoadoutChangesAllowed)
+                {
+                    _avatar.ServerToggleSuppressor(_weapons.activeSlot);
+                    BHLog.Info("Loadout", $"{_avatar.PlayerName} suppressor on slot {_weapons.activeSlot}: {_avatar.HasSuppressor(_weapons.activeSlot)}");
+                }
+            }
+        }
+
+        [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
+        void SubmitInputRpc(InputBundle bundle, RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId)
+                return;
+            MessagesReceived++;
+            _lastInputTime = NetworkManager.ServerTime.Time;
+
+            int count = Mathf.Min(bundle.count, InputBundle.Capacity);
+            for (int i = 0; i < count; i++)
+            {
+                PlayerInputCommand cmd = bundle[i];
+                if (cmd.sequence <= _lastReceivedSequence)
+                    continue;
+                if (_queue.Count >= MaxQueuedCommands)
+                    break;
+                _queue.Enqueue(cmd);
+                _lastReceivedSequence = cmd.sequence;
+            }
+        }
+
+        void ServerBroadcast()
+        {
+            if (!IsOwner)
+                OwnerStateRpc(MakeOwnerState());
+
+            if (++_ticksSinceSnapshot >= RemoteSnapshotInterval)
+            {
+                _ticksSinceSnapshot = 0;
+                RemoteStateRpc(new RemoteSnapshot
+                {
+                    time = NetworkManager.ServerTime.Time,
+                    teleportId = _teleportId,
+                    position = _motor.position,
+                    yaw = _lastCommand.yaw,
+                    pitch = _lastCommand.pitch,
+                    crouch = _motor.crouch,
+                    activeSlot = _weapons.activeSlot,
+                    grounded = _motor.grounded,
+                    reloading = _weapons.IsReloading,
+                });
+            }
+        }
+
+        OwnerState MakeOwnerState() => new()
+        {
+            lastSequence = _lastProcessedSequence,
+            teleportId = _teleportId,
+            simTime = _simTime,
+            yaw = _lastCommand.yaw,
+            motor = _motor,
+            weapons = _weapons,
+        };
+
+        /// <summary>Server: authoritative relocation (spawn / round start). Clears queued input.</summary>
+        public void ServerTeleport(Vector3 position, float yaw, bool resetWeapons)
+        {
+            _motor = new MotorState { position = position, grounded = true };
+            PlayerMotor.ApplyShape(_cc, Movement, 0f);
+            PlayerMotor.Teleport(_cc, position);
+            transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            if (resetWeapons) ResetWeapons();
+            _teleportId++;
+            _queue.Clear();
+            _lastCommand.yaw = yaw;
+            _lastCommand.pitch = 0f;
+            _renderFrom = _renderTo = position;
+            _snapshotCount = 0;
+
+            if (IsOwner)
+            {
+                _input?.SetLook(yaw, 0f);
+                Teleported?.Invoke();
+            }
+            else
+            {
+                TeleportRpc(MakeOwnerState());
+            }
+        }
+
+        // ───────────── Owner prediction ─────────────
+
+        void OwnerPredictTick(float dt)
+        {
+            Physics.SyncTransforms();
+            PlayerInputCommand cmd = BuildLocalCommand();
+            Simulate(cmd, dt, authoritative: false, firstPrediction: true);
+            Record(cmd);
+            PushRender();
+
+            // Shift the redundancy window and send.
+            for (int i = 0; i < _recentCommands.Length - 1; i++)
+                _recentCommands[i] = _recentCommands[i + 1];
+            _recentCommands[^1] = cmd;
+
+            var bundle = new InputBundle();
+            int count = 0;
+            for (int i = 0; i < _recentCommands.Length; i++)
+            {
+                if (_recentCommands[i].sequence == 0 || _recentCommands[i].sequence <= _lastAckSequence) continue;
+                bundle[count++] = _recentCommands[i];
+            }
+            bundle.count = (byte)count;
+            SubmitInputRpc(bundle);
+        }
+
+        void Record(in PlayerInputCommand cmd)
+        {
+            _history[cmd.sequence % HistorySize] = new HistoryEntry
+            {
+                command = cmd,
+                motor = _motor,
+                weapons = _weapons,
+                simTime = _simTime,
+            };
+        }
+
+        [Rpc(SendTo.Owner, Delivery = RpcDelivery.Unreliable)]
+        void OwnerStateRpc(OwnerState state)
+        {
+            if (IsServer) return;
+            MessagesReceived++;
+            if (state.teleportId != _teleportId) return; // Stale state from before a teleport.
+            if (state.lastSequence <= _lastAckSequence) return;
+            _lastAckSequence = state.lastSequence;
+
+            if (state.lastSequence == 0)
+            {
+                // Server has not processed any of our input yet; nothing to reconcile.
+                return;
+            }
+
+            ref HistoryEntry entry = ref _history[state.lastSequence % HistorySize];
+            bool havePrediction = entry.command.sequence == state.lastSequence;
+            if (havePrediction && Matches(entry, state))
+                return;
+
+            // Misprediction: rewind to the authoritative state and replay newer commands.
+            CorrectionCount++;
+            ApplyAuthoritative(state);
+            float dt = TickInterval;
+            for (uint seq = state.lastSequence + 1; seq < _nextSequence; seq++)
+            {
+                ref HistoryEntry e = ref _history[seq % HistorySize];
+                if (e.command.sequence != seq) break;
+                Simulate(e.command, dt, authoritative: false, firstPrediction: false);
+                e.motor = _motor;
+                e.weapons = _weapons;
+                e.simTime = _simTime;
+            }
+            _renderTo = _motor.position;
+        }
+
+        static bool Matches(in HistoryEntry predicted, in OwnerState server)
+        {
+            if ((predicted.motor.position - server.motor.position).sqrMagnitude > 0.0004f) return false;
+            if (Mathf.Abs(predicted.motor.velocity.y - server.motor.velocity.y) > 0.25f) return false;
+            WeaponSimState a = predicted.weapons, b = server.weapons;
+            return a.activeSlot == b.activeSlot
+                   && a.magazine0 == b.magazine0 && a.magazine1 == b.magazine1
+                   && a.reserve0 == b.reserve0 && a.reserve1 == b.reserve1
+                   && a.IsReloading == b.IsReloading;
+        }
+
+        void ApplyAuthoritative(in OwnerState state)
+        {
+            _motor = state.motor;
+            _weapons = state.weapons;
+            _simTime = state.simTime;
+            PlayerMotor.ApplyShape(_cc, Movement, _motor.crouch);
+            PlayerMotor.Teleport(_cc, _motor.position);
+        }
+
+        [Rpc(SendTo.Owner)]
+        void TeleportRpc(OwnerState state)
+        {
+            if (IsServer) return;
+            _teleportId = state.teleportId;
+            _lastAckSequence = state.lastSequence;
+            ApplyAuthoritative(state);
+            // Any history entries are from before the teleport; mark them unusable.
+            for (int i = 0; i < _history.Length; i++) _history[i].command.sequence = 0;
+            _renderFrom = _renderTo = _motor.position;
+            _input?.SetLook(state.yaw, 0f);
+            transform.rotation = Quaternion.Euler(0f, state.yaw, 0f);
+            Teleported?.Invoke();
+        }
+
+        // ───────────── Remote interpolation ─────────────
+
+        [Rpc(SendTo.NotServer, Delivery = RpcDelivery.Unreliable)]
+        void RemoteStateRpc(RemoteSnapshot snapshot)
+        {
+            if (IsOwner) return;
+
+            if (_snapshotCount > 0)
+            {
+                RemoteSnapshot newest = _snapshots[_snapshotCount - 1];
+                if (snapshot.time <= newest.time) return; // Out of order.
+                if (snapshot.teleportId != newest.teleportId) _snapshotCount = 0; // Teleported: snap.
+            }
+
+            if (_snapshotCount == SnapshotBufferSize)
+            {
+                Array.Copy(_snapshots, 1, _snapshots, 0, SnapshotBufferSize - 1);
+                _snapshotCount--;
+            }
+            _snapshots[_snapshotCount++] = snapshot;
+        }
+
+        float RemoteCrouch { get; set; }
+
+        void InterpolateRemote()
+        {
+            if (_snapshotCount == 0) return;
+
+            double renderTime = NetworkManager.ServerTime.Time - InterpolationDelay;
+            RemoteSnapshot from = _snapshots[0], to = _snapshots[0];
+            for (int i = 0; i < _snapshotCount; i++)
+            {
+                if (_snapshots[i].time <= renderTime) from = _snapshots[i];
+                to = _snapshots[i];
+                if (_snapshots[i].time > renderTime) break;
+            }
+
+            float t = to.time > from.time ? Mathf.Clamp01((float)((renderTime - from.time) / (to.time - from.time))) : 1f;
+            Vector3 pos = Vector3.Lerp(from.position, to.position, t);
+            _remoteYaw = Mathf.LerpAngle(from.yaw, to.yaw, t);
+            _remotePitch = Mathf.Lerp(from.pitch, to.pitch, t);
+            RemoteCrouch = Mathf.Lerp(from.crouch, to.crouch, t);
+            _remoteSlot = to.activeSlot;
+            _remoteReloading = to.reloading;
+            _motor.position = pos;
+            _motor.grounded = to.grounded;
+
+            transform.SetPositionAndRotation(pos, Quaternion.Euler(0f, _remoteYaw, 0f));
+            PlayerMotor.ApplyShape(_cc, Movement, RemoteCrouch);
+
+            // Drop snapshots that are no longer needed.
+            int firstNeeded = 0;
+            for (int i = 0; i < _snapshotCount - 1; i++)
+            {
+                if (_snapshots[i + 1].time <= renderTime) firstNeeded = i + 1;
+            }
+            if (firstNeeded > 0)
+            {
+                Array.Copy(_snapshots, firstNeeded, _snapshots, 0, _snapshotCount - firstNeeded);
+                _snapshotCount -= firstNeeded;
+            }
+        }
+
+        // ───────────── Shot effects ─────────────
+
+        /// <summary>Server: tell other clients a shot happened so they can render it.</summary>
+        public void ServerBroadcastShot(Vector3 origin, Vector3 end, byte slot, bool suppressed, bool hitPlayer)
+        {
+            ShotFxRpc(origin, end, slot, suppressed, hitPlayer);
+        }
+
+        [Rpc(SendTo.NotOwner, Delivery = RpcDelivery.Unreliable)]
+        void ShotFxRpc(Vector3 origin, Vector3 end, byte slot, bool suppressed, bool hitPlayer)
+        {
+            if (IsServer && !IsClient) return;
+            RemoteShot?.Invoke(origin, end, slot, suppressed, hitPlayer);
+        }
+    }
+}
