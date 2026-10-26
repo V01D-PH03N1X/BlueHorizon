@@ -37,6 +37,7 @@ namespace BlueHorizon.UI
         VisualElement _menu, _connecting, _hud, _scoreboard, _pause, _victory;
         Label _menuStatus, _connectingLabel;
         TextField _nameField, _addressField, _portField;
+        Button _reconnectButton;
         // HUD
         Label _scoreAlpha, _scoreBravo, _timer, _phaseLabel, _sideBanner;
         Label _healthValue, _armorLabel, _barrierLabel;
@@ -171,6 +172,8 @@ namespace BlueHorizon.UI
             form.Add(_portField);
 
             MakeButton(form, "CONNECT", OnConnectClicked, "button-primary");
+            _reconnectButton = MakeButton(form, "RECONNECT TO LAST MATCH", OnReconnectClicked, "button-primary");
+            Show(_reconnectButton, false);
             MakeButton(form, "HOST LOCAL MATCH (DEV)", OnHostClicked, "button-quiet");
             MakeButton(form, "QUIT", () => NetworkBootstrap.Instance?.Quit(0), "button-quiet");
             _menuStatus = Text(form, "", "status");
@@ -222,6 +225,14 @@ namespace BlueHorizon.UI
             NetworkBootstrap.Instance.StartClient(new ServerEndpoint(address, port), _nameField.value);
         }
 
+        void OnReconnectClicked()
+        {
+            NetworkBootstrap nb = NetworkBootstrap.Instance;
+            if (nb == null || nb.LastEndpoint.Address == null) return;
+            LaunchConfig.Current.role = LaunchRole.Client;
+            nb.StartClient(nb.LastEndpoint, _nameField.value);
+        }
+
         void OnHostClicked()
         {
             ushort.TryParse(_portField.value, NumberStyles.Integer, CultureInfo.InvariantCulture, out ushort port);
@@ -251,6 +262,12 @@ namespace BlueHorizon.UI
                 _ => "",
             };
             _menuStatus.EnableInClassList("danger", nb.ClientState == ClientConnectionState.Disconnected);
+            if (_reconnectButton != null)
+            {
+                bool canReconnect = nb.ClientState == ClientConnectionState.Disconnected && nb.LastEndpoint.Address != null;
+                Show(_reconnectButton, canReconnect);
+                if (canReconnect) _reconnectButton.text = $"RECONNECT TO {nb.LastEndpoint}";
+            }
             if (_connectingLabel != null)
                 _connectingLabel.text = nb.LastEndpoint.Address != null ? $"CONNECTING TO {nb.LastEndpoint}" : "CONNECTING";
         }

@@ -35,6 +35,11 @@ namespace BlueHorizon.Player
         public float yaw;
         public float pitch;
         public InputButtons buttons;
+        /// <summary>
+        /// Server time the client was rendering other players at when it built this command (its interpolation time).
+        /// Used only for lag compensation, and always clamped by the server (see LagCompensation.ClampViewTime).
+        /// </summary>
+        public double viewTime;
 
         public Vector2 Move => new(moveX / 127f, moveY / 127f);
 
@@ -52,6 +57,7 @@ namespace BlueHorizon.Player
         {
             if (!float.IsFinite(yaw)) yaw = 0f;
             if (!float.IsFinite(pitch)) pitch = 0f;
+            if (!double.IsFinite(viewTime)) viewTime = 0;
             yaw = Mathf.Repeat(yaw, 360f);
             pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
             if (moveX == sbyte.MinValue) moveX = -127;
@@ -67,6 +73,7 @@ namespace BlueHorizon.Player
             serializer.SerializeValue(ref yaw);
             serializer.SerializeValue(ref pitch);
             serializer.SerializeValue(ref buttons);
+            serializer.SerializeValue(ref viewTime);
         }
     }
 

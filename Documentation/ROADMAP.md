@@ -10,14 +10,15 @@ Dedicated-server foundation, prediction/reconciliation movement, two weapons + s
 Striker with Smoke Grenade / Wayblocker / Field Heal, HeavyBomb with full round/match flow, graybox map, HUD and menus,
 builds, automated tests. See TESTING.md for what was verified and RISKS.md for what is not done.
 
-## Milestone 2 — Stability and multiplayer
+## Milestone 2 — Stability and multiplayer (implemented 2026-10-26, see TESTING)
 
-- Lag compensation (hitbox history, rewind to shooter view time, max rewind window) — L-01.
-- Correction smoothing, snapshot extrapolation, starvation handling — L-02, L-04.
-- Latency/packet-loss/jitter test matrix (network simulator), dashboards from `[BH][Perf]` lines — L-11.
-- Harden request validation further (per-client RPC budgets, anomaly logging).
-- Validate 10-player performance on the target server hardware; Linux dedicated server build — L-12.
-- Reconnect to a running match — L-15.
+- Done: lag compensation (pose history, clamped rewind to the shooter's view time, 300 ms cap).
+- Done: correction blending, snapshot extrapolation, input-starvation gravity, snapshot-derived render clock.
+- Done: network simulator (latency/jitter/loss) and latency test matrix; per-client RTT, shots/hits, rewind in perf logs.
+- Done: input message budget with anomaly logging.
+- Done: 10-player load test re-run; Linux dedicated server builds (not yet run, L-12).
+- Done: reconnect to a running match.
+- Open: two-machine LAN/WAN playtest, Linux run, human playtest of hit-registration feel.
 
 ## Milestone 3 — Additional core modes
 

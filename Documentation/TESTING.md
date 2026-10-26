@@ -13,13 +13,64 @@ all processes on one machine (localhost).
 | One multiplayer scenario | `Tools\autotest-match.ps1 -Scenario fight\|passive\|explode\|idle\|disconnect` | `Logs\autotest-<scenario>\` |
 | All multiplayer scenarios | `Tools\run-all-autotests.ps1` | pass/fail table |
 | 10-player load test | `Tools\loadtest.ps1 -Bots 10 -DurationSeconds 150` | `Logs\loadtest\` |
+| Hit registration under latency | `Tools\latency-matrix.ps1 [-Latencies 0,50,100,150] [-JitterMs n] [-LossPercent p]` | `Logs\latency\results.json` |
 | Manual local match | `Tools\run-local-match.ps1 -Clients 2` | `Logs\local\` |
 
 The multiplayer scenarios run the **real builds over UDP**: one headless dedicated server and headless clients driven
 by `TestBotInputSource`, which only produces input commands — every action passes the same server validation as a
 human player. The script checks the server log for the expected events.
 
-## Results — 2026-10-26
+## Results — Milestone 2 (2026-10-26)
+
+### EditMode — 85 / 85 passed
+The 72 milestone-1 tests plus 13 new ones: pose history interpolation/clamping/ring buffer, view-time clamping
+(future, too old, invalid, backtracking, rewind disabled), reconnect registry (restore once, expiry, other match),
+simulation/lag-comp command-line flags.
+
+### Hit registration under latency — `Tools\latency-matrix.ps1`
+A shooting bot against a bot strafing left/right at run speed (5.2 m/s, direction change every 0.9 s), both bots with
+simulated latency in their sockets, 180 s per run, server rewind cap 300 ms:
+
+| RTT | Lag comp | Shots | Hits | Hit % | Avg rewind | Kills |
+|---|---|---|---|---|---|---|
+| 0 ms | on | 30 | 24 | **80.0** | 123 ms | 6 |
+| 0 ms | off | 59 | 22 | 37.3 | — | 6 |
+| 50 ms | on | 34 | 24 | **70.6** | 167 ms | 6 |
+| 50 ms | off | 119 | 17 | 14.3 | — | 4 |
+| 100 ms | on | 27 | 20 | **74.1** | 227 ms | 6 |
+| 100 ms | off | 167 | 16 | 9.6 | — | 3 |
+| 150 ms | on | 27 | 22 | **81.5** | 266 ms | 6 |
+| 150 ms | off | 227 | 11 | 4.8 | — | 2 |
+| 100 ms ±20 ms jitter, 3 % loss | on | 28 | 22 | **78.6** | 214 ms | 6 |
+| 100 ms ±20 ms jitter, 3 % loss | off | 194 | 13 | 6.7 | — | 3 |
+
+Without compensation the bot (which aims where it *sees* the target) misses a moving target more the higher the
+latency; with compensation the hit rate stays roughly constant. Even at 0 ms the interpolation delay makes
+uncompensated shots trail a strafing target. Samples are small (one engagement per round); they show the effect
+clearly but are not a precise accuracy benchmark. The bot's aim is perfect — this measures hit *registration*, not
+human feel. Prediction corrections for the shooter rose with latency (2 → 64 per 180 s), mostly from player contact
+(RISKS L-03).
+
+An earlier run (before `SnapshotClock`) showed 188 ms of rewind at 0 ms RTT: Netcode's client `ServerTime` trailed
+the snapshot stream by ~90 ms, so remote players were displayed later than necessary. Fixed and re-measured above.
+
+### Automated multiplayer scenarios — 6 / 6 passed
+`fight`, `passive`, `explode`, `idle`, `disconnect` (all re-run on the M2 build) and the new **`reconnect`**:
+Bot1 is killed mid-round, dropped after 5 s of input silence, restarted with the same name, rejoins Alpha with its
+stats restored ("reconnected to match 1; team and stats restored"), and the match completes.
+
+### Load test — 10 players, 150 s (M2 build)
+Server avg 8.34 ms (120 Hz cap), p99 ≤ 8.5 ms, every client 900 inputs per 15 s, per-client RTT 7–18 ms on localhost,
+average rewind 113–118 ms, 24 kills, 46 ability uses, 0 exceptions. GC unchanged (~14 gen-0 per 15 s, heap 3 MB).
+
+### Linux dedicated server
+Builds (`Tools\build.ps1 -Target LinuxServer`, 85 MB). **Not run** — no Linux/WSL on the dev PC.
+
+### Not verified in M2
+Human feel of lag compensation and correction blending; two-machine LAN/WAN; Linux run; jitter above ±20 ms and loss
+above 3 %.
+
+## Results — Milestone 1 (2026-10-26)
 
 ### EditMode — 72 / 72 passed
 

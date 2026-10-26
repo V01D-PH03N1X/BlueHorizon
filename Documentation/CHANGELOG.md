@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 — 2026-10-26 — Milestone 2: stability and multiplayer
+
+### Added
+- Server lag compensation: per-character pose history, clamped client view time, hitbox rewind for every shot
+  (`-noLagComp`, `-maxRewind ms`).
+- Snapshot-derived render clock for remote players (removes ~90 ms of extra display delay), up to 100 ms of
+  extrapolation when snapshots run out, visual blending of prediction corrections.
+- Server applies gravity to input-starved airborne players; input message budget (180/s) with `[BH][Security]` logs.
+- Network simulator in the managed socket (`-simLatency`, `-simJitter`, `-simLoss`); `Tools\latency-matrix.ps1`.
+- Reconnect: team, stats and loadout restored for 180 s after a disconnect; Reconnect button in the menu;
+  `reconnect` automated scenario.
+- Perf log: per-client RTT, shots/hits, average rewind; per-player shots/hits in the match summary.
+- Linux dedicated server target builds.
+- 13 new EditMode tests (85 total).
+
 ## 0.1.0 — 2026-10-26 — Vertical slice (milestone 1)
 
 ### Added

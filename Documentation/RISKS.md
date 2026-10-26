@@ -6,21 +6,22 @@ Status as of 2026-10-26 (vertical slice, milestone 1).
 
 | ID | Limitation | Impact | Plan |
 |---|---|---|---|
-| L-01 | **No lag compensation.** Shots are tested against current server positions. | Shooters with latency must lead moving targets by ~RTT/2 + 100 ms. Not competitive-grade. | Milestone 2: hitbox history + rewind to the shooter's view time, bounded rewind window. |
-| L-02 | No snapshot extrapolation; corrections snap instead of blending. | Visible pops under packet loss / heavy mispredictions. | Milestone 2: error smoothing, extrapolation cap. |
+| L-01 | Lag compensation is capped at 300 ms rewind. | Above ~200 ms RTT shooters are only partially compensated; victims can be hit up to 300 ms after reaching cover. | Tune the cap with real playtests; consider per-player caps. |
+| L-02 | Correction blending is position-only; view angles are not blended. | Minor. | None planned. |
 | L-03 | Remote players' colliders are at interpolated positions on clients. | Player-vs-player contact mispredicts (load test: up to ~40 corrections per 30 s for some bots in crowded spawns). | Exclude remote characters from owner prediction collisions or predict them. |
-| L-04 | Server does not simulate a player whose input stops (no gravity during input starvation). | A lagging player hangs in place until input resumes or the 5 s timeout drops them. | Simulate empty commands after N starved ticks. |
+| L-04 | During input starvation the server only applies gravity (no horizontal extrapolation). | A lagging player stops horizontally until input resumes. | Revisit with real-network data. |
 | L-05 | Smoke is a client-side visual obstruction; no server visibility culling. | A modified client can see through smoke; bullets pass through smoke (intended). | Server-side relevancy/visibility for competitive integrity. |
 | L-06 | View angles are trusted input. | Aimbots are possible; this is an anti-cheat problem, not addressed. | Anti-cheat evaluation (Milestone 7). |
 | L-07 | Placeholder art, animation and audio (synthesized at runtime). | Presentation is graybox-level. | Art/audio pass (Milestone 7). |
 | L-08 | No minimap, so the suppressor's "no minimap indicator" effect has no visible consequence yet. | — | Implement with the minimap. |
 | L-09 | Single agent; no agent selection UI; no weapon purchase/economy. | — | Milestones 4–5. |
 | L-10 | Matchmaking, cloud allocation and player persistence are interfaces only (`ISessionConnector`, `IServerHostingAdapter`). | Players connect by IP. | Milestone 7. |
-| L-11 | Latency/packet-loss behaviour has not been measured (tests run on localhost). | Unknown feel on real networks. | Milestone 2: run with the Multiplayer Tools network simulator or an OS-level shaper. |
-| L-12 | Linux dedicated server build target is wired up but not built or run. | — | Milestone 2. |
+| L-11 | Latency/jitter/loss measured only with the built-in simulator on one machine (no WAN, no two-machine LAN test). | Real routers/Wi-Fi may behave differently (bursty loss). | Two-machine and WAN playtests. |
+| L-12 | Linux dedicated server **builds** (85 MB) but has not been run (no Linux/WSL on the dev PC). It uses the stock socket (Linux does not report ICMP errors on unconnected UDP sockets). | Untested platform. | Run on a Linux VM/host before production. |
 | L-13 | The managed ICMP-safe socket allocates per packet (~1 gen-0 GC/s at 10 players). | Negligible at 10 players (heap ~3 MB). | Pool endpoints / use `SocketAddress` APIs before scaling up. |
 | L-14 | Scenes are generated; hand edits are overwritten by the generator. | Level designers must edit `MapBuilder.cs` (or stop regenerating the map). | Convert the map to an authored scene when art production starts. |
-| L-15 | The pause menu does not pause the match (online game); there is no reconnect-to-match flow. | — | Reconnect support in Milestone 2. |
+| L-15 | The pause menu does not pause the match (online game, by design). | — | — |
+| L-16 | Reconnect identity is the display name (no accounts). | Someone joining with a disconnected player's name within 180 s inherits their team and stats. | Accounts/session tokens (Milestone 7). |
 
 ## Issues found and fixed during the slice
 

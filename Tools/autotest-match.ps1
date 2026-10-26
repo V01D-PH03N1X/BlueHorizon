@@ -8,11 +8,12 @@
   explode — like passive, but the fuse is shorter than the defuse time, so the bomb detonates
   idle    — bots do nothing: rounds end on the timer
   disconnect — three passive bots; Bot1 is killed mid-round, the match must recover and finish
+  reconnect  — like disconnect, then Bot1 rejoins with the same name and must get its team and stats back
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File Tools\autotest-match.ps1 -Scenario passive
 #>
 param(
-    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect')][string]$Scenario = 'fight',
+    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect', 'reconnect')][string]$Scenario = 'fight',
     [int]$Bots = 2,
     [int]$Port = 7790,
     [int]$RoundsToWin = 2,
@@ -34,7 +35,7 @@ $roundTime = switch ($Scenario) { 'idle' { 15 } default { 75 } }
 $fuse = switch ($Scenario) { 'explode' { 4 } default { 25 } }
 $defuse = switch ($Scenario) { 'explode' { 6 } default { 5 } }
 $botMode = switch ($Scenario) { 'fight' { 'fight' } 'idle' { 'idle' } default { 'passive' } }
-if ($Scenario -eq 'disconnect' -and $Bots -lt 3) { $Bots = 3 }
+if ($Scenario -in 'disconnect', 'reconnect' -and $Bots -lt 3) { $Bots = 3 }
 
 $sArgs = @('-port', $Port, '-logFile', $serverLog, '-roundTime', $roundTime, '-preRoundTime', 2, '-postRoundTime', 3,
     '-plantTime', 3, '-defuseTime', $defuse, '-fuseTime', $fuse, '-roundsToWin', $RoundsToWin,
@@ -52,10 +53,17 @@ for ($i = 1; $i -le $Bots; $i++) {
 }
 Write-Host "[$Scenario] $Bots bot client(s) started; waiting for the match to finish (timeout ${TimeoutSeconds}s)"
 
-if ($Scenario -eq 'disconnect') {
+if ($Scenario -in 'disconnect', 'reconnect') {
     Start-Sleep -Seconds 18
     Write-Host "[$Scenario] Killing Bot1 (pid $($clients[0].Id)) mid-round"
     Stop-Process -Id $clients[0].Id -Force
+}
+if ($Scenario -eq 'reconnect') {
+    Start-Sleep -Seconds 10
+    Write-Host "[$Scenario] Restarting Bot1 with the same name"
+    $cArgs = @('-batchmode', '-nographics', '-connect', '127.0.0.1', '-port', $Port, '-name', 'Bot1', '-bot', '-botMode', $botMode,
+        '-quitAfter', $TimeoutSeconds, '-logFile', (Join-Path $logs 'bot1-rejoin.log'))
+    $clients += Start-Process -FilePath $client -ArgumentList $cArgs -PassThru -WindowStyle Hidden
 }
 
 $finished = $serverProc.WaitForExit(($TimeoutSeconds + 15) * 1000)
@@ -80,6 +88,7 @@ switch ($Scenario) {
     'passive' { $checks['Bomb planted'] = 'Bomb planted at site'; $checks['Bomb defused'] = 'Bomb defused' }
     'explode' { $checks['Bomb planted'] = 'Bomb planted at site'; $checks['Bomb exploded'] = 'Bomb exploded' }
     'idle'    { $checks['Timer ended rounds'] = 'Time expired' }
+    'reconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Bot1 reconnected with state'] = "Player 'Bot1' reconnected to match" }
     'disconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Round ended after disconnect'] = 'Round \d+ ended' }
 }
 

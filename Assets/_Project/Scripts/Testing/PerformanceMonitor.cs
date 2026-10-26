@@ -20,6 +20,8 @@ namespace BlueHorizon.Testing
         int _gcAtWindowStart;
         int _correctionsAtWindowStart;
         readonly Dictionary<ulong, int> _lastReceived = new();
+        int _shotsAtWindowStart, _hitsAtWindowStart;
+        double _rewindAtWindowStart;
 
         public static void Install(float interval)
         {
@@ -61,7 +63,20 @@ namespace BlueHorizon.Testing
                     _lastReceived[a.OwnerClientId] = total;
                     sb.Append($" {a.OwnerClientId}:{total - previous}");
                 }
-                net = sb.Append(" ]").ToString();
+                sb.Append(" ] rtt[");
+                foreach (PlayerAvatar a in PlayerAvatar.All)
+                {
+                    if (a.OwnerClientId == NetworkManager.ServerClientId) continue;
+                    sb.Append($" {a.OwnerClientId}:{nm.NetworkConfig.NetworkTransport.GetCurrentRtt(a.OwnerClientId)}");
+                }
+                int shots = Combat.CombatSystem.ShotsResolved - _shotsAtWindowStart;
+                double rewind = Combat.CombatSystem.RewindSecondsTotal - _rewindAtWindowStart;
+                sb.Append($" ] shots {shots} hits {Combat.CombatSystem.CharacterHits - _hitsAtWindowStart}");
+                if (shots > 0) sb.Append($" rewind avg {rewind / shots * 1000.0:0}ms");
+                _shotsAtWindowStart = Combat.CombatSystem.ShotsResolved;
+                _hitsAtWindowStart = Combat.CombatSystem.CharacterHits;
+                _rewindAtWindowStart = Combat.CombatSystem.RewindSecondsTotal;
+                net = sb.ToString();
             }
             if (nm != null && nm.IsClient && !nm.IsServer && PlayerAvatar.Local != null)
             {

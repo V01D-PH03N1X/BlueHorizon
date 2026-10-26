@@ -101,6 +101,9 @@ namespace BlueHorizon.Match
         readonly List<Vector3> _candidates = new();
         readonly System.Random _random = new();
         int _attackersAtStart, _defendersAtStart;
+        const double ReconnectGraceSeconds = 180;
+        readonly ReconnectRegistry _reconnects = new();
+        int _matchId;
         int _spawnCursor;
 
         public HeavyBombSettings Settings => _settings;
@@ -126,6 +129,10 @@ namespace BlueHorizon.Match
 
             _settings = GameContent.Instance.heavyBomb.WithOverrides(LaunchConfig.Current);
             CombatSystem.FriendlyFire = _settings.friendlyFire;
+            CombatSystem.LagCompensationEnabled = LaunchConfig.Current.lagCompensation;
+            BHLog.Info("Match", LaunchConfig.Current.lagCompensation
+                ? $"Lag compensation ON (max rewind {LaunchConfig.Current.maxRewindMs} ms)"
+                : "Lag compensation OFF");
             _bomb = new BombStateMachine(_settings.plantDuration, _settings.defuseDuration, _settings.fuseDuration);
             RoundsToWin.Value = _settings.roundsToWin;
             RoundTimeLimit.Value = _settings.roundTime;
@@ -166,7 +173,14 @@ namespace BlueHorizon.Match
             if (NetworkManager.ConnectedClients.TryGetValue(clientId, out NetworkClient client) && client.PlayerObject != null) return;
 
             CountTeams(out int alpha, out int bravo, aliveOnly: false);
+            string playerName = ConnectionRegistry.NameOf(clientId);
+            bool nameInUse = false;
+            foreach (PlayerAvatar a in PlayerAvatar.All) nameInUse |= a.PlayerName == playerName;
+            ReconnectRecord previous = default;
+            bool rejoining = !nameInUse && _reconnects.TryTake(playerName, _matchId, NetworkManager.ServerTime.Time, ReconnectGraceSeconds, out previous);
             Team team = TeamAssignment.ChooseTeam(alpha, bravo, _settings.teamSize);
+            if (rejoining && (previous.team == Team.Alpha ? alpha : bravo) < _settings.teamSize)
+                team = previous.team;
             if (team == Team.None)
             {
                 BHLog.Warn("Match", $"No team slot for client {clientId}; disconnecting");
@@ -174,12 +188,16 @@ namespace BlueHorizon.Match
                 return;
             }
 
-            string playerName = ConnectionRegistry.NameOf(clientId);
             GameObject go = Instantiate(GameContent.Instance.playerPrefab, new Vector3(0f, -100f, 0f), Quaternion.identity);
             var avatar = go.GetComponent<PlayerAvatar>();
             avatar.ServerInitialize(playerName, team);
             go.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId, destroyWithScene: true);
             BHLog.Info("Match", $"Player '{playerName}' (client {clientId}) joined team {team}");
+            if (rejoining)
+            {
+                avatar.ServerRestoreStats(previous.kills, previous.deaths, previous.objectiveScore, previous.suppressorMask);
+                BHLog.Info("Match", $"Player '{playerName}' reconnected to match {_matchId}; team and stats restored");
+            }
 
             if (IsWarmup)
                 SpawnAtSideSpawn(avatar);
@@ -191,6 +209,19 @@ namespace BlueHorizon.Match
         {
             if (!IsServer || _bomb == null) return;
             ulong id = avatar.OwnerClientId;
+            if (!IsWarmup && Phase.Value != MatchPhase.MatchOver && avatar.Team != Team.None)
+            {
+                _reconnects.Store(avatar.PlayerName, new ReconnectRecord
+                {
+                    team = avatar.Team,
+                    kills = avatar.Kills.Value,
+                    deaths = avatar.Deaths.Value,
+                    objectiveScore = avatar.ObjectiveScore.Value,
+                    suppressorMask = avatar.SuppressorMask.Value,
+                    matchId = _matchId,
+                    disconnectTime = NetworkManager.ServerTime.Time,
+                });
+            }
             if (_bomb.State is BombState.Carried or BombState.Planting && _bomb.CarrierId == id)
             {
                 _bomb.Drop(avatar.Simulation.Position);
@@ -335,6 +366,8 @@ namespace BlueHorizon.Match
 
         void StartMatch()
         {
+            _matchId++;
+            _reconnects.Clear();
             ScoreAlpha.Value = 0;
             ScoreBravo.Value = 0;
             MatchWinner.Value = Team.None;
@@ -432,7 +465,7 @@ namespace BlueHorizon.Match
         {
             BHLog.Info("Match", $"Match over: {MatchWinner.Value} wins {Mathf.Max(ScoreAlpha.Value, ScoreBravo.Value)}-{Mathf.Min(ScoreAlpha.Value, ScoreBravo.Value)}");
             foreach (PlayerAvatar a in PlayerAvatar.All)
-                BHLog.Info("Match", $"  {a.PlayerName} [{a.Team}] K {a.Kills.Value} / D {a.Deaths.Value} / Obj {a.ObjectiveScore.Value}");
+                BHLog.Info("Match", $"  {a.PlayerName} [{a.Team}] K {a.Kills.Value} / D {a.Deaths.Value} / Obj {a.ObjectiveScore.Value} / shots {a.ServerShotsFired} hits {a.ServerCharacterHits}");
             _bomb.Deactivate();
             PublishBomb();
             SetPhase(MatchPhase.MatchOver, _settings.matchOverTime);
@@ -441,6 +474,7 @@ namespace BlueHorizon.Match
 
         void ResetToWarmup()
         {
+            _reconnects.Clear();
             ScoreAlpha.Value = 0;
             ScoreBravo.Value = 0;
             RoundNumber.Value = 0;

@@ -68,7 +68,7 @@ namespace BlueHorizon.Testing
 
             MatchManager match = MatchManager.Instance;
             string mode = LaunchConfig.Current.botMode;
-            if (match == null || !_avatar.IsAlive || mode == "idle")
+            if (match == null || !_avatar.IsAlive || mode == "idle" || (mode == "strafe" && match.Phase.Value == MatchPhase.PreRound))
             {
                 cmd.yaw = _yaw;
                 cmd.pitch = _pitch;
@@ -91,6 +91,27 @@ namespace BlueHorizon.Testing
             Vector3 eye = _sim.EyePosition;
 
             // Combat first.
+            if (mode == "strafe")
+            {
+                // Moving target for hit-registration tests: walk to its site, then strafe left/right at run speed.
+                // Never shoots and ignores the bomb.
+                Vector3? post = match.Phase.Value == MatchPhase.Live ? FollowRoute(side, (int)(_avatar.OwnerClientId % 2), match) : null;
+                if (post.HasValue)
+                {
+                    Vector3 flat = post.Value - _sim.Position;
+                    flat.y = 0f;
+                    _yaw = Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg;
+                    cmd.SetMove(Vector2.up);
+                }
+                else if (match.Phase.Value == MatchPhase.Live)
+                {
+                    int dir = ((int)(Time.time / 0.9f) & 1) == 0 ? 1 : -1;
+                    cmd.SetMove(new Vector2(dir, 0f));
+                }
+                Finish(ref cmd);
+                return;
+            }
+
             PlayerAvatar enemy = mode == "passive" ? null : FindVisibleEnemy(eye);
             if (enemy != null)
             {
@@ -201,7 +222,8 @@ namespace BlueHorizon.Testing
             cmd.pitch = _pitch;
         }
 
-        static int TargetSite(MatchManager match) => match.RoundNumber.Value % 2 == 1 ? 0 : 1;
+        static int TargetSite(MatchManager match) =>
+            LaunchConfig.Current.botSite >= 0 ? LaunchConfig.Current.botSite : match.RoundNumber.Value % 2 == 1 ? 0 : 1;
 
         Vector3? FollowRoute(Side side, int site, MatchManager match)
         {

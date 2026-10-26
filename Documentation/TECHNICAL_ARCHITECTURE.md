@@ -39,7 +39,12 @@ simulate faster than real time** (no speed hacks), and floods are bounded and ch
 (pitch clamp, non-finite values, unknown button bits) before use.
 
 If a client sends nothing for **5 s** the server disconnects it (input-silence timeout) instead of waiting for the
-30 s transport timeout.
+30 s transport timeout. More than 180 input messages per second (clients send ~60) are dropped and logged as a
+`[BH][Security]` anomaly (at most once per 10 s).
+
+**Input starvation:** when no command arrives for more than 6 ticks and the character is airborne, the server keeps
+applying gravity (empty command, no sequence consumed) so a lagging player cannot hang in the air. The owner is
+corrected when its input resumes.
 
 ### Movement model — client prediction + server reconciliation
 
@@ -51,14 +56,17 @@ If a client sends nothing for **5 s** the server disconnects it (input-silence t
   sequence (position, velocity, crouch, weapon state) every tick (unreliable).
 - **Reconciliation:** if the predicted state for that sequence differs (position > 2 cm, vertical velocity,
   ammo/slot/reload), the owner rewinds to the server state and replays newer commands. Corrections are counted and
-  logged (`corrections` in the perf line). Server teleports (spawns, round start) use a reliable RPC with a
-  teleport id; stale unreliable states are ignored.
-- **Other players:** snapshots at 30 Hz, rendered **100 ms in the past** with interpolation.
+  logged (`corrections` in the perf line). Errors under 2 m are **blended out visually** (camera offset decaying at
+  rate 15/s); larger ones snap. Server teleports (spawns, round start) use a reliable RPC with a teleport id; stale
+  unreliable states are ignored.
+- **Other players:** snapshots at 30 Hz, rendered **100 ms behind the newest snapshot** with interpolation. The
+  render clock (`SnapshotClock`) is derived from the snapshot timestamps themselves (exponentially smoothed offset to
+  the local clock); Netcode's client `ServerTime` was measured to trail the snapshot stream by ~90 ms, which would have
+  added that much display delay. If snapshots run out (loss), positions are extrapolated for at most 100 ms.
 - Clients can never set positions; the server only moves characters by simulating commands or by its own teleports.
 
-Known limitations: no extrapolation when snapshots run out; small corrections snap instead of blending; remote
-characters' colliders are at interpolated (past) positions on clients, so player-vs-player bumping mispredicts
-slightly (visible as corrections in crowded load tests).
+Known limitation: remote characters' colliders are at interpolated (past) positions on clients, so player-vs-player
+bumping mispredicts slightly (visible as corrections in crowded load tests and under latency).
 
 ### Weapons and hit registration
 
@@ -69,9 +77,15 @@ slightly (visible as corrections in crowded load tests).
   or damage. The first valid hitbox stops the shot; own hitboxes are skipped; teammates block without damage.
 - The shooter gets `HitConfirmRpc` (hit marker / headshot / kill); other clients get `ShotFxRpc` (tracer, sound,
   impact). The owner's own tracer is drawn from a visual-only raycast.
-- **No lag compensation.** Targets are tested at their current server positions, so a shooter with latency must lead
-  moving targets by roughly RTT/2 + 100 ms interpolation. This is not competitive-grade hit registration yet; a
-  rewind of hitboxes to the shooter's view time is the first item of Milestone 2.
+- **Lag compensation (hitbox rewind).** Every server tick each character records its pose (server time, position,
+  crouch) in a 72-entry ring buffer (`PoseHistory`, ~1.2 s). Each input command carries the server time the client was
+  rendering others at (`viewTime`). When a shot resolves, the server clamps that time
+  (`LagCompensation.ClampViewTime`: not in the future, not older than **300 ms** (`-maxRewind`), not more than 50 ms
+  older than the player's previous accepted view time), moves every other living character's hitboxes to their
+  interpolated pose at that time, raycasts, and restores them. World geometry and deployables are not rewound.
+  Measured average rewind: 123 ms at 0 ms RTT, 167/227/266 ms at 50/100/150 ms RTT (see TESTING). Beyond ~200 ms RTT the
+  300 ms cap compensates only partially, by design, to bound "shot behind cover" effects for the victim.
+  `-noLagComp` disables it for comparison.
 
 ### Health, abilities, objective, match
 
@@ -98,6 +112,19 @@ Pure rule classes have no engine/network dependencies and are covered by EditMod
 
 Remaining trust: view angles are input (aim assistance/aimbots are a client-integrity problem, not solved here);
 smoke and other visibility are client-side (wallhack-style information is available to a modified client).
+
+## Network simulation
+
+`IcmpSafeUdpInterface` can add latency, jitter and loss in both directions (`-simLatency ms` = added RTT,
+`-simJitter ms`, `-simLoss %`). Any process with these flags uses the managed socket; `Tools\latency-matrix.ps1`
+applies them to the bot clients to measure hit registration under latency.
+
+## Reconnect
+
+When a player disconnects during a running match, the server keeps their team, kills/deaths/objective score and
+loadout for 180 s (`ReconnectRegistry`, keyed by display name; there are no accounts yet). Rejoining with the same name
+in the same match restores them; the player spectates until the next round. After an unexpected disconnect the client
+menu shows **Reconnect to <server>**.
 
 ## Network transport on Windows (`IcmpSafeUdpInterface`)
 

@@ -75,6 +75,8 @@ Configuration precedence: defaults → `server.json` next to the executable (or 
 | `-quitAfter S`, `-quitAfterMatches N` | automated-test lifetime |
 | `-perfLogInterval S` | performance log period (server default 30 s) |
 | `-defaultSocket` | use the stock Unity Transport socket instead of the ICMP-safe one (diagnostics) |
+| `-noLagComp`, `-maxRewind MS` | disable lag compensation / change the rewind cap (default 300) |
+| `-simLatency MS`, `-simJitter MS`, `-simLoss %` | simulate network conditions in this process (client or server) |
 
 Shut the server down with Ctrl+C / closing the window, or `Stop-Process`. It logs startup, joins, team assignment,
 match start, every kill, ability use, bomb event, round result, match result, disconnects and periodic performance in

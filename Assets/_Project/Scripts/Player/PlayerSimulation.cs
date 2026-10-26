@@ -39,6 +39,12 @@ namespace BlueHorizon.Player
         /// server from streaming to a dead endpoint for the full 30 s transport timeout (see RISKS.md, R-07).
         /// </summary>
         const float InputSilenceTimeout = 5f;
+        /// <summary>Server ticks without input before a starved character keeps falling (gravity only).</summary>
+        const int StarvationTicks = 6;
+        /// <summary>Input RPCs per second above which the excess is dropped and logged (clients send ~60).</summary>
+        const int MaxInputRpcsPerSecond = 180;
+        const float ExtrapolationLimit = 0.1f;
+        const float CorrectionSmoothing = 15f;
 
         struct HistoryEntry
         {
@@ -121,6 +127,14 @@ namespace BlueHorizon.Player
         int _budget;
         int _ticksSinceSnapshot;
         double _lastInputTime;
+        readonly PoseHistory _poses = new();
+        double _lastViewTime;
+        double _currentViewTime;
+        int _starvedTicks;
+        int _rpcWindowCount;
+        double _rpcWindowStart;
+        double _lastAnomalyLog;
+        Vector3 _correctionOffset;
 
         // Remote interpolation.
         readonly RemoteSnapshot[] _snapshots = new RemoteSnapshot[SnapshotBufferSize];
@@ -160,7 +174,7 @@ namespace BlueHorizon.Player
             {
                 float dt = TickInterval;
                 float alpha = Mathf.Clamp01((Time.time - _renderTickTime) / dt);
-                return Vector3.Lerp(_renderFrom, _renderTo, alpha) + Vector3.up * PlayerMotor.EyeHeight(Movement, _motor.crouch);
+                return Vector3.Lerp(_renderFrom, _renderTo, alpha) + _correctionOffset + Vector3.up * PlayerMotor.EyeHeight(Movement, _motor.crouch);
             }
         }
 
@@ -226,7 +240,11 @@ namespace BlueHorizon.Player
             if (!IsSpawned) return;
 
             if (IsOwner)
+            {
                 _input?.UpdateFrame(Time.deltaTime);
+                // Visual correction smoothing: reconciliation snaps the simulation, the camera blends the error away.
+                _correctionOffset = Vector3.Lerp(_correctionOffset, Vector3.zero, 1f - Mathf.Exp(-CorrectionSmoothing * Time.deltaTime));
+            }
             else if (!IsServer)
                 InterpolateRemote();
 
@@ -266,6 +284,8 @@ namespace BlueHorizon.Player
         {
             var cmd = new PlayerInputCommand { sequence = _nextSequence++ };
             _input?.Fill(ref cmd);
+            // What this client is looking at: remote players are rendered InterpolationDelay in the past (host: present).
+            cmd.viewTime = IsServer ? NetworkManager.ServerTime.Time : RemoteRenderTime(NetworkManager);
             cmd.Sanitize(Movement.minPitch, Movement.maxPitch);
             return cmd;
         }
@@ -309,7 +329,7 @@ namespace BlueHorizon.Player
             if (shot.fired)
             {
                 if (authoritative)
-                    CombatSystem.ServerResolveShot(_avatar, EyePosition, shot);
+                    CombatSystem.ServerResolveShot(_avatar, EyePosition, shot, _currentViewTime, NetworkManager.ServerTime.Time);
                 if (firstPrediction && IsOwner)
                     LocalShotPredicted?.Invoke(shot);
             }
@@ -325,6 +345,12 @@ namespace BlueHorizon.Player
         void ServerSimulate(PlayerInputCommand cmd, float dt)
         {
             cmd.Sanitize(Movement.minPitch, Movement.maxPitch);
+            double now = NetworkManager.ServerTime.Time;
+            LaunchConfig config = LaunchConfig.Current;
+            _currentViewTime = config.lagCompensation
+                ? LagCompensation.ClampViewTime(cmd.viewTime, now, config.maxRewindMs / 1000.0, _lastViewTime)
+                : now;
+            _lastViewTime = _currentViewTime;
             Simulate(cmd, dt, authoritative: true, firstPrediction: true);
             _lastProcessedSequence = cmd.sequence;
         }
@@ -349,6 +375,52 @@ namespace BlueHorizon.Player
                 _budget--;
                 processed++;
             }
+
+            if (processed > 0)
+            {
+                _starvedTicks = 0;
+            }
+            else if (++_starvedTicks > StarvationTicks && _avatar.IsAlive && _cc.enabled && !_motor.grounded)
+            {
+                // Input starvation: keep gravity working so a lagging player cannot hang in the air.
+                // Does not consume a sequence number; the owner is corrected when its input resumes.
+                PlayerInputCommand idle = _lastCommand;
+                idle.buttons = InputButtons.None;
+                idle.moveX = idle.moveY = 0;
+                PlayerMotor.Step(ref _motor, idle, dt, Movement, _cc, new MotorContext { canMove = false });
+            }
+        }
+
+        bool ServerAcceptInputRpc()
+        {
+            double now = NetworkManager.ServerTime.Time;
+            if (now - _rpcWindowStart >= 1.0)
+            {
+                _rpcWindowStart = now;
+                _rpcWindowCount = 0;
+            }
+            if (++_rpcWindowCount <= MaxInputRpcsPerSecond) return true;
+            if (now - _lastAnomalyLog > 10.0)
+            {
+                _lastAnomalyLog = now;
+                BHLog.Warn("Security", $"Client {OwnerClientId} exceeded {MaxInputRpcsPerSecond} input messages/s; dropping excess");
+            }
+            return false;
+        }
+
+        /// <summary>Server: move this character's hitboxes to its recorded pose at <paramref name="time"/> (lag compensation).</summary>
+        public void ServerApplyHistoricalHitboxes(double time)
+        {
+            if (_rig == null || _rig.HitboxRoot == null || !_poses.TrySample(time, out Vector3 position, out float crouch)) return;
+            _rig.HitboxRoot.position = position;
+            _rig.HitboxRoot.localScale = new Vector3(1f, PlayerMotor.Height(Movement, crouch) / PlayerRig.StandingHeight, 1f);
+        }
+
+        public void ServerRestoreHitboxes()
+        {
+            if (_rig == null || _rig.HitboxRoot == null) return;
+            _rig.HitboxRoot.localPosition = Vector3.zero;
+            _rig.HitboxRoot.localScale = new Vector3(1f, PlayerMotor.Height(Movement, _motor.crouch) / PlayerRig.StandingHeight, 1f);
         }
 
         void ServerHandleActions(in PlayerInputCommand cmd, bool alive)
@@ -381,6 +453,8 @@ namespace BlueHorizon.Player
         {
             if (rpcParams.Receive.SenderClientId != OwnerClientId)
                 return;
+            if (!ServerAcceptInputRpc())
+                return;
             MessagesReceived++;
             _lastInputTime = NetworkManager.ServerTime.Time;
 
@@ -399,6 +473,8 @@ namespace BlueHorizon.Player
 
         void ServerBroadcast()
         {
+            _poses.Record(NetworkManager.ServerTime.Time, _motor.position, _motor.crouch);
+
             if (!IsOwner)
                 OwnerStateRpc(MakeOwnerState());
 
@@ -444,6 +520,7 @@ namespace BlueHorizon.Player
             _lastCommand.pitch = 0f;
             _renderFrom = _renderTo = position;
             _snapshotCount = 0;
+            _poses.Clear();
 
             if (IsOwner)
             {
@@ -515,6 +592,7 @@ namespace BlueHorizon.Player
 
             // Misprediction: rewind to the authoritative state and replay newer commands.
             CorrectionCount++;
+            Vector3 predictedBefore = _motor.position;
             ApplyAuthoritative(state);
             float dt = TickInterval;
             for (uint seq = state.lastSequence + 1; seq < _nextSequence; seq++)
@@ -525,6 +603,19 @@ namespace BlueHorizon.Player
                 e.motor = _motor;
                 e.weapons = _weapons;
                 e.simTime = _simTime;
+            }
+
+            // Blend small errors visually instead of snapping the camera; large ones (e.g. blocked by a wall) snap.
+            Vector3 error = predictedBefore - _motor.position;
+            if (error.sqrMagnitude < 4f)
+            {
+                _correctionOffset += error;
+                _renderFrom -= error;
+            }
+            else
+            {
+                _correctionOffset = Vector3.zero;
+                _renderFrom = _motor.position;
             }
             _renderTo = _motor.position;
         }
@@ -570,6 +661,7 @@ namespace BlueHorizon.Player
         void RemoteStateRpc(RemoteSnapshot snapshot)
         {
             if (IsOwner) return;
+            SnapshotClock.Observe(snapshot.time);
 
             if (_snapshotCount > 0)
             {
@@ -588,11 +680,15 @@ namespace BlueHorizon.Player
 
         float RemoteCrouch { get; set; }
 
+        /// <summary>Server time at which remote players are rendered on this client (also reported for lag compensation).</summary>
+        static double RemoteRenderTime(NetworkManager network) =>
+            (SnapshotClock.IsValid ? SnapshotClock.ServerTimeEstimate : network.ServerTime.Time) - InterpolationDelay;
+
         void InterpolateRemote()
         {
             if (_snapshotCount == 0) return;
 
-            double renderTime = NetworkManager.ServerTime.Time - InterpolationDelay;
+            double renderTime = RemoteRenderTime(NetworkManager);
             RemoteSnapshot from = _snapshots[0], to = _snapshots[0];
             for (int i = 0; i < _snapshotCount; i++)
             {
@@ -603,6 +699,20 @@ namespace BlueHorizon.Player
 
             float t = to.time > from.time ? Mathf.Clamp01((float)((renderTime - from.time) / (to.time - from.time))) : 1f;
             Vector3 pos = Vector3.Lerp(from.position, to.position, t);
+
+            // Snapshots ran out (loss/jitter): extrapolate briefly along the last known velocity.
+            RemoteSnapshot newest = _snapshots[_snapshotCount - 1];
+            if (renderTime > newest.time && _snapshotCount >= 2)
+            {
+                RemoteSnapshot previous = _snapshots[_snapshotCount - 2];
+                double span = newest.time - previous.time;
+                if (span > 1e-4)
+                {
+                    Vector3 velocity = (newest.position - previous.position) / (float)span;
+                    float ahead = Mathf.Min((float)(renderTime - newest.time), ExtrapolationLimit);
+                    pos = newest.position + velocity * ahead;
+                }
+            }
             _remoteYaw = Mathf.LerpAngle(from.yaw, to.yaw, t);
             _remotePitch = Mathf.Lerp(from.pitch, to.pitch, t);
             RemoteCrouch = Mathf.Lerp(from.crouch, to.crouch, t);

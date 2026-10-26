@@ -35,6 +35,8 @@ namespace BlueHorizon.Core
         public bool bot;
         /// <summary>Test bot behaviour: "fight" (default), "passive" (objectives only, never shoots) or "idle" (does nothing).</summary>
         public string botMode = "fight";
+        /// <summary>Test bot: force the attack site (0 = A, 1 = B); -1 alternates by round.</summary>
+        public int botSite = -1;
         /// <summary>Allow a match to start with a single connected player (development only).</summary>
         public bool devSoloStart;
         /// <summary>Quit the process after this many seconds (0 = never). Used by automated tests.</summary>
@@ -47,6 +49,22 @@ namespace BlueHorizon.Core
         /// <summary>Capture a screenshot every N seconds into <see cref="screenshotDir"/> (graphical clients, testing).</summary>
         public float screenshotInterval;
         public string screenshotDir = "";
+
+        /// <summary>Server lag compensation (hitbox rewind). On by default; -noLagComp disables it for comparison.</summary>
+        public bool lagCompensation = true;
+        /// <summary>Longest rewind the server accepts, milliseconds. Bounds what a client can claim to have seen.</summary>
+        public int maxRewindMs = 300;
+        /// <summary>Simulated network conditions for testing (both directions, this process only).</summary>
+        public int simLatencyMs;
+        public int simJitterMs;
+        public float simLossPercent;
+
+        public Networking.SimulatedNetworkConditions NetworkConditions => new()
+        {
+            latencyMs = simLatencyMs,
+            jitterMs = simJitterMs,
+            lossPercent = simLossPercent,
+        };
 
         // Optional match-rule overrides (negative = use the GameMode asset value).
         public float roundTime = -1f;
@@ -103,12 +121,18 @@ namespace BlueHorizon.Core
             config.maxPlayers = Mathf.Clamp(args.GetInt("maxPlayers", config.maxPlayers), 1, 10);
             config.bot |= args.Has("bot");
             config.botMode = args.GetString("botMode", config.botMode).ToLowerInvariant();
+            config.botSite = args.GetInt("botSite", config.botSite);
             config.devSoloStart |= args.Has("devSoloStart");
             config.quitAfterSeconds = args.GetFloat("quitAfter", config.quitAfterSeconds);
             config.quitAfterMatches = args.GetInt("quitAfterMatches", config.quitAfterMatches);
             config.perfLogInterval = args.GetFloat("perfLogInterval", config.perfLogInterval);
             config.screenshotInterval = args.GetFloat("screenshotInterval", config.screenshotInterval);
             config.screenshotDir = args.GetString("screenshotDir", config.screenshotDir);
+            if (args.Has("noLagComp")) config.lagCompensation = false;
+            config.maxRewindMs = Mathf.Clamp(args.GetInt("maxRewind", config.maxRewindMs), 0, 1000);
+            config.simLatencyMs = Mathf.Max(0, args.GetInt("simLatency", config.simLatencyMs));
+            config.simJitterMs = Mathf.Max(0, args.GetInt("simJitter", config.simJitterMs));
+            config.simLossPercent = Mathf.Clamp(args.GetFloat("simLoss", config.simLossPercent), 0f, 100f);
             config.roundTime = args.GetFloat("roundTime", config.roundTime);
             config.preRoundTime = args.GetFloat("preRoundTime", config.preRoundTime);
             config.postRoundTime = args.GetFloat("postRoundTime", config.postRoundTime);

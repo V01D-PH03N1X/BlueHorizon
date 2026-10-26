@@ -53,6 +53,10 @@ namespace BlueHorizon.Player
         public bool IsAlive => AliveValue.Value;
         public AgentDefinition Agent => GameContent.Instance != null ? GameContent.Instance.defaultAgent : null;
 
+        /// <summary>Server diagnostics: shots resolved and shots that hit a character.</summary>
+        public int ServerShotsFired { get; set; }
+        public int ServerCharacterHits { get; set; }
+
         /// <summary>Server: wall-clock time of death, for warmup respawns.</summary>
         public double DeathTime { get; private set; }
 
@@ -176,6 +180,16 @@ namespace BlueHorizon.Player
         }
 
         public void ServerAddObjectiveScore(int amount) => ObjectiveScore.Value += amount;
+
+        /// <summary>Server: restore scoreboard and loadout after a reconnect.</summary>
+        public void ServerRestoreStats(int kills, int deaths, int objectiveScore, byte suppressorMask)
+        {
+            Kills.Value = kills;
+            Deaths.Value = deaths;
+            ObjectiveScore.Value = objectiveScore;
+            SuppressorMask.Value = suppressorMask;
+            RecomputeStats();
+        }
 
         public void ServerToggleSuppressor(int slot)
         {

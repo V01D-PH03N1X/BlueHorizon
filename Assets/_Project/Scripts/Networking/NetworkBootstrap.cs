@@ -113,7 +113,7 @@ namespace BlueHorizon.Networking
             _transport.SetConnectionData(true, "0.0.0.0", _config.port, _config.listenAddress);
             _network.NetworkConfig.ConnectionApproval = true;
             _network.ConnectionApprovalCallback = ApproveConnection;
-            UseIcmpSafeSocketIfNeeded();
+            ConfigureSocket(server: true);
 
             if (!_network.StartServer())
             {
@@ -138,7 +138,7 @@ namespace BlueHorizon.Networking
             }.ToBytes();
 
             SetClientState(ClientConnectionState.Connecting, "");
-            UseIcmpSafeSocketIfNeeded();
+            ConfigureSocket(server: true);
             if (!_network.StartHost())
             {
                 SetClientState(ClientConnectionState.Disconnected, $"Could not host on port {_config.port}.");
@@ -150,18 +150,23 @@ namespace BlueHorizon.Networking
 
         /// <summary>
         /// Windows servers use <see cref="IcmpSafeUdpInterface"/> so a crashed client cannot stall everyone's traffic
-        /// (RISKS.md, R-07). Pass -defaultSocket to compare against the stock Unity Transport socket.
+        /// (RISKS.md, R-07); any process with simulated network conditions uses it too. -defaultSocket forces the stock
+        /// Unity Transport socket for comparison.
         /// </summary>
-        static void UseIcmpSafeSocketIfNeeded()
+        void ConfigureSocket(bool server)
         {
             bool windows = Application.platform is RuntimePlatform.WindowsPlayer or RuntimePlatform.WindowsServer or RuntimePlatform.WindowsEditor;
-            if (!windows || CommandLineArgs.FromEnvironment().Has("defaultSocket"))
+            SimulatedNetworkConditions conditions = _config.NetworkConditions;
+            bool forceDefault = CommandLineArgs.FromEnvironment().Has("defaultSocket");
+            if (forceDefault || !(conditions.Enabled || (server && windows)))
             {
                 UnityTransport.s_DriverConstructor = null;
                 return;
             }
-            UnityTransport.s_DriverConstructor = new IcmpSafeDriverConstructor();
-            BHLog.Info("Network", "Using ICMP-safe UDP socket (Windows server)");
+            UnityTransport.s_DriverConstructor = new IcmpSafeDriverConstructor(conditions);
+            BHLog.Info("Network", conditions.Enabled
+                ? $"Using managed UDP socket with SIMULATED network conditions: {conditions}"
+                : "Using ICMP-safe UDP socket (Windows server)");
         }
 
         void OnServerStarted()
@@ -239,6 +244,8 @@ namespace BlueHorizon.Networking
             }.ToBytes();
 
             BHLog.Info("Client", $"Connecting to {target} as '{playerName}'");
+            Player.SnapshotClock.Reset();
+            ConfigureSocket(server: false);
             if (!_network.StartClient())
                 SetClientState(ClientConnectionState.Disconnected, "Could not start the network client.");
         }
