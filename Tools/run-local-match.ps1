@@ -13,7 +13,9 @@ param(
     [int]$Port = 7777,
     [string]$Builds = 'Builds',
     [switch]$DevSolo,
-    [string[]]$ServerArgs = @()
+    [string[]]$ServerArgs = @(),
+    # Extra arguments for every client, e.g. -ClientArgs '-simLatency','100'
+    [string[]]$ClientArgs = @()
 )
 . "$PSScriptRoot\Common.ps1"
 
@@ -31,7 +33,7 @@ Start-Process -FilePath $server -ArgumentList $sArgs -WindowStyle Minimized | Ou
 Start-Sleep -Seconds 3
 
 for ($i = 1; $i -le $Clients; $i++) {
-    $cArgs = @('-connect', '127.0.0.1', '-port', $Port, '-name', "Player$i", '-screen-width', '1280', '-screen-height', '720', '-screen-fullscreen', '0', '-logFile', (Join-Path $logs "client$i.log"))
+    $cArgs = @('-connect', '127.0.0.1', '-port', $Port, '-name', "Player$i", '-screen-width', '1280', '-screen-height', '720', '-screen-fullscreen', '0', '-logFile', (Join-Path $logs "client$i.log"), '-perfLogInterval', 10) + $ClientArgs
     Write-Host "Starting client Player$i"
     Start-Process -FilePath $client -ArgumentList $cArgs | Out-Null
 }
