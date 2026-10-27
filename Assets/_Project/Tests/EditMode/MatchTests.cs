@@ -276,7 +276,15 @@ namespace BlueHorizon.Tests
 
             LaunchConfig s = LaunchConfig.Resolve(new CommandLineArgs(new[] { "server.exe", "-server", "-maxPlayers", "64" }));
             Assert.AreEqual(LaunchRole.Server, s.role);
-            Assert.AreEqual(10, s.maxPlayers, "Clamped to the 10-player design limit");
+            Assert.AreEqual(16, s.maxPlayers, "Clamped to the 16-player server limit");
+
+            // The mode caps it further: Duel allows 2, HeavyBomb 10.
+            var duel = ScriptableObject.CreateInstance<BlueHorizon.GameModes.DuelSettings>();
+            duel.maxPlayers = 2;
+            Assert.AreEqual(2, MatchManager.MaxPlayersFor(duel, s));
+            var heavyBomb = ScriptableObject.CreateInstance<BlueHorizon.GameModes.HeavyBombSettings>();
+            heavyBomb.maxPlayers = 10;
+            Assert.AreEqual(10, MatchManager.MaxPlayersFor(heavyBomb, s));
         }
     }
 }

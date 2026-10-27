@@ -121,7 +121,7 @@ namespace BlueHorizon.Networking
                 Quit(1);
                 return;
             }
-            HostingServices.Adapter.OnServerStarted(_config.port, _config.maxPlayers);
+            HostingServices.Adapter.OnServerStarted(_config.port, Match.MatchManager.MaxPlayersFor(content.ModeByIndex(content.FindModeIndex(_config.mode)), _config));
         }
 
         public bool StartHost(string playerName)
@@ -191,7 +191,8 @@ namespace BlueHorizon.Networking
         {
             bool parsed = ConnectionPayload.TryParse(request.Payload, out ConnectionPayload payload);
             int connected = ConnectionRegistry.Count;
-            string reject = ConnectionRegistry.Validate(payload, parsed, connected, _config.maxPlayers);
+            int maxPlayers = Match.MatchManager.MaxPlayersFor(content.ModeByIndex(content.FindModeIndex(_config.mode)), _config);
+            string reject = ConnectionRegistry.Validate(payload, parsed, connected, maxPlayers);
 
             response.CreatePlayerObject = false;
             if (reject != null)

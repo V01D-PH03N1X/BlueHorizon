@@ -30,7 +30,7 @@ namespace BlueHorizon.UI
         {
             Team.Alpha => AlphaColor,
             Team.Bravo => BravoColor,
-            _ => Color.gray,
+            _ => new Color(0.92f, 0.32f, 0.3f), // Free-for-all: everyone else is hostile.
         };
 
         void Awake()
@@ -126,7 +126,7 @@ namespace BlueHorizon.UI
         void OnLocalShot(ShotEvent shot)
         {
             WeaponStats stats = _avatar.StatsForSlot(shot.slot);
-            Sfx sfx = stats.Suppressed ? Sfx.SuppressedShot : shot.slot == 0 ? Sfx.RifleShot : Sfx.PistolShot;
+            Sfx sfx = stats.Suppressed ? Sfx.SuppressedShot : stats.Definition.slot == WeaponSlot.Primary ? Sfx.RifleShot : Sfx.PistolShot;
             GameAudio.Play2D(sfx, stats.Suppressed ? 0.55f : 0.8f);
 
             GameCamera cam = GameCamera.Instance;
@@ -148,7 +148,8 @@ namespace BlueHorizon.UI
         void OnRemoteShot(Vector3 origin, Vector3 end, byte slot, bool suppressed, bool hitPlayer)
         {
             Vector3 muzzle = _rig.WeaponVisual != null ? _rig.WeaponVisual.position + _rig.WeaponVisual.forward * 0.3f : origin;
-            Sfx sfx = suppressed ? Sfx.SuppressedShot : slot == 0 ? Sfx.RifleShot : Sfx.PistolShot;
+            bool rifle = _avatar.WeaponInSlot(slot)?.slot == WeaponSlot.Primary;
+            Sfx sfx = suppressed ? Sfx.SuppressedShot : rifle ? Sfx.RifleShot : Sfx.PistolShot;
             float volume = suppressed ? 0.35f : 1f;
             GameAudio.PlayAt(sfx, origin, volume, 1f, suppressed ? 20f : 90f);
             Effects.Instance?.Tracer(muzzle, end, suppressed);

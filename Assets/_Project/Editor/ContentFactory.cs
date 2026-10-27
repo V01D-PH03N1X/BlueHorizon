@@ -79,11 +79,38 @@ namespace BlueHorizon.EditorTools
                 EditorUtility.SetDirty(heavyBomb);
             }
 
+            if (string.IsNullOrEmpty(heavyBomb.description))
+            {
+                heavyBomb.description = "Attackers plant the bomb at site A or B; defenders stop them or defuse it.";
+                EditorUtility.SetDirty(heavyBomb);
+            }
+
+            var duel = LoadOrCreate<DuelSettings>(Data + "/GameModes/Duel.asset", out bool newDuel);
+            if (newDuel) Configure(duel, "duel", "Duel", "1v1 elimination rounds. A timeout goes to whoever has more health left.",
+                teamSize: 1, maxPlayers: 2, minPlayers: 1, timeLimit: 60f, preRound: 3f, postRound: 4f, respawn: 0f, scoreLimit: 5, ffa: false);
+            var deathmatch = LoadOrCreate<DeathmatchSettings>(Data + "/GameModes/Deathmatch.asset", out bool newDm);
+            if (newDm) Configure(deathmatch, "deathmatch", "Deathmatch", "Free-for-all. First to the kill limit wins.",
+                teamSize: 15, maxPlayers: 15, minPlayers: 2, timeLimit: 600f, preRound: 3f, postRound: 0f, respawn: 3f, scoreLimit: 25, ffa: true);
+            var capture = LoadOrCreate<CaptureAreaSettings>(Data + "/GameModes/CaptureArea.asset", out bool newCapture);
+            if (newCapture) Configure(capture, "capture", "Capture the Area", "Take the central area and hold it. The holding team scores every second.",
+                teamSize: 5, maxPlayers: 10, minPlayers: 1, timeLimit: 480f, preRound: 5f, postRound: 0f, respawn: 5f, scoreLimit: 100, ffa: false);
+            var weaponGame = LoadOrCreate<WeaponGameSettings>(Data + "/GameModes/WeaponGame.asset", out bool newWg);
+            if (newWg)
+            {
+                Configure(weaponGame, "weapongame", "Weapon Game", "Every kill gives you the next weapon. Win with a kill using the last one.",
+                    teamSize: 12, maxPlayers: 12, minPlayers: 2, timeLimit: 600f, preRound: 3f, postRound: 0f, respawn: 2f, scoreLimit: 4, ffa: true);
+                weaponGame.abilitiesEnabled = false;
+                weaponGame.loadoutChangesEnabled = false;
+                EditorUtility.SetDirty(weaponGame);
+            }
+
             content.heavyBomb = heavyBomb;
+            content.modes = new GameModeDefinition[] { heavyBomb, duel, deathmatch, capture, weaponGame };
             content.defaultAgent = striker;
             content.primaryWeapon = rifle;
             content.secondaryWeapon = pistol;
             content.suppressor = suppressor;
+            content.weapons = new[] { rifle, pistol };
 
             content.playerPrefab = CreatePlayerPrefab();
             content.matchManagerPrefab = CreateSimplePrefab<MatchManager>(Prefabs + "/Match/MatchManager.prefab", GameLayers.Default);
@@ -101,6 +128,26 @@ namespace BlueHorizon.EditorTools
         }
 
         // ───────────── Data ─────────────
+
+        static void Configure(GameModeDefinition m, string id, string name, string description, int teamSize, int maxPlayers, int minPlayers,
+            float timeLimit, float preRound, float postRound, float respawn, int scoreLimit, bool ffa)
+        {
+            m.modeId = id;
+            m.displayName = name;
+            m.description = description;
+            m.teamSize = teamSize;
+            m.maxPlayers = maxPlayers;
+            m.minPlayersPerTeam = minPlayers;
+            m.timeLimit = timeLimit;
+            m.preRoundTime = preRound;
+            m.postRoundTime = postRound;
+            m.respawnDelay = respawn;
+            m.scoreLimit = scoreLimit;
+            m.freeForAll = ffa;
+            m.matchStartCountdown = 5f;
+            m.matchOverTime = 12f;
+            EditorUtility.SetDirty(m);
+        }
 
         static void ConfigureRifle(WeaponDefinition w)
         {

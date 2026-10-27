@@ -15,7 +15,7 @@ namespace BlueHorizon.Match
 {
     public enum MatchPhase : byte
     {
-        /// <summary>Warmup: free respawns, no bomb, abilities and loadout allowed.</summary>
+        /// <summary>Warmup: free respawns, abilities and loadout allowed, nothing counts.</summary>
         WaitingForPlayers = 0,
         /// <summary>Enough players joined; match starts when the countdown ends.</summary>
         Countdown = 1,
@@ -52,6 +52,26 @@ namespace BlueHorizon.Match
             && actionStart.Equals(o.actionStart) && actionEnd.Equals(o.actionEnd) && detonationTime.Equals(o.detonationTime);
     }
 
+    /// <summary>Mode-specific objective state for the HUD (Capture the Area zone).</summary>
+    public struct ModeStatus : INetworkSerializable, IEquatable<ModeStatus>
+    {
+        public Team owner;
+        public Team capturing;
+        public float progress;
+        public bool contested;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref owner);
+            serializer.SerializeValue(ref capturing);
+            serializer.SerializeValue(ref progress);
+            serializer.SerializeValue(ref contested);
+        }
+
+        public bool Equals(ModeStatus o) =>
+            owner == o.owner && capturing == o.capturing && Mathf.Abs(progress - o.progress) < 0.005f && contested == o.contested;
+    }
+
     public struct KillFeedEntry
     {
         public string killer;
@@ -63,18 +83,19 @@ namespace BlueHorizon.Match
     }
 
     /// <summary>
-    /// Server-authoritative HeavyBomb match: players, teams, spawns, round flow, bomb objective and score.
-    /// Spawned by the server when the map loads; clients observe its replicated state.
-    /// Gameplay rules live in <see cref="HeavyBombRules"/>, <see cref="BombStateMachine"/> and <see cref="MatchRules"/>.
+    /// Server-authoritative match flow shared by every game mode: joins and team assignment, spawns and respawns,
+    /// warmup/countdown/freeze/live/post-round/match-over phases, team and player scores, results and the kill feed.
+    /// Everything mode-specific lives in the <see cref="GameModeRules"/> selected with -mode.
     /// </summary>
-    public sealed class MatchManager : NetworkBehaviour
+    public sealed class MatchManager : NetworkBehaviour, IMatchHost
     {
         const float WarmupRespawnDelay = 3f;
         const float SpawnClearance = 1.2f;
-        const float ExplosionRadius = 12f;
+        const double ReconnectGraceSeconds = 180;
 
         public static MatchManager Instance { get; private set; }
 
+        public readonly NetworkVariable<byte> ModeIndex = new();
         public readonly NetworkVariable<MatchPhase> Phase = new();
         public readonly NetworkVariable<double> PhaseEndTime = new();
         public readonly NetworkVariable<int> RoundNumber = new();
@@ -82,70 +103,121 @@ namespace BlueHorizon.Match
         public readonly NetworkVariable<int> ScoreBravo = new();
         public readonly NetworkVariable<Team> AttackingTeam = new(Team.Alpha);
         public readonly NetworkVariable<Team> LastRoundWinner = new();
-        public readonly NetworkVariable<RoundEndReason> LastRoundReason = new();
+        public readonly NetworkVariable<FixedString64Bytes> LastRoundReason = new();
         public readonly NetworkVariable<Team> MatchWinner = new();
+        public readonly NetworkVariable<FixedString32Bytes> MatchWinnerName = new();
         public readonly NetworkVariable<BombNetState> Bomb = new();
-        public readonly NetworkVariable<int> RoundsToWin = new();
-        public readonly NetworkVariable<float> RoundTimeLimit = new();
+        public readonly NetworkVariable<ModeStatus> Status = new();
+        public readonly NetworkVariable<int> ScoreLimit = new();
+        public readonly NetworkVariable<float> TimeLimit = new();
 
         /// <summary>Clients: kill feed entries as they happen.</summary>
         public static event Action<KillFeedEntry> KillFeed;
         /// <summary>Clients: the bomb exploded at a position.</summary>
         public static event Action<Vector3> BombExploded;
 
-        HeavyBombSettings _settings;
-        BombStateMachine _bomb;
+        GameModeDefinition _settings;
+        GameModeRules _rules;
         readonly List<SpawnPoint> _attackSpawns = new();
         readonly List<SpawnPoint> _defenseSpawns = new();
+        readonly List<SpawnPoint> _freeSpawns = new();
         readonly List<Vector3> _occupied = new();
         readonly List<Vector3> _candidates = new();
-        readonly System.Random _random = new();
-        int _attackersAtStart, _defendersAtStart;
-        const double ReconnectGraceSeconds = 180;
         readonly ReconnectRegistry _reconnects = new();
         int _matchId;
         int _spawnCursor;
+        bool _matchDecided;
 
-        public HeavyBombSettings Settings => _settings;
+        /// <summary>The mode's data (valid on every peer).</summary>
+        public GameModeDefinition Mode => _settings != null ? _settings : GameContent.Instance?.ModeByIndex(ModeIndex.Value);
+        public HeavyBombSettings HeavyBomb => Mode as HeavyBombSettings;
+        public bool FreeForAll => Mode != null && Mode.freeForAll;
+        public bool RoundBased => Mode is HeavyBombSettings or DuelSettings;
 
         public bool CanMove => Phase.Value is not (MatchPhase.PreRound or MatchPhase.MatchOver);
         public bool CanFight => Phase.Value is MatchPhase.WaitingForPlayers or MatchPhase.Countdown or MatchPhase.Live or MatchPhase.PostRound;
-        public bool AbilitiesAllowed => Phase.Value is MatchPhase.WaitingForPlayers or MatchPhase.Countdown or MatchPhase.Live;
-        public bool LoadoutChangesAllowed => Phase.Value is MatchPhase.WaitingForPlayers or MatchPhase.Countdown or MatchPhase.PreRound;
+        public bool AbilitiesAllowed => (Mode == null || Mode.abilitiesEnabled)
+                                        && Phase.Value is MatchPhase.WaitingForPlayers or MatchPhase.Countdown or MatchPhase.Live;
+        public bool LoadoutChangesAllowed => (Mode == null || Mode.loadoutChangesEnabled)
+                                             && Phase.Value is MatchPhase.WaitingForPlayers or MatchPhase.Countdown or MatchPhase.PreRound;
         public bool IsWarmup => Phase.Value is MatchPhase.WaitingForPlayers or MatchPhase.Countdown;
 
         public float PhaseTimeRemaining => NetworkManager == null ? 0f : Mathf.Max(0f, (float)(PhaseEndTime.Value - NetworkManager.ServerTime.Time));
 
+        /// <summary>Objective role of a team this round. Free-for-all: none.</summary>
         public Side SideOf(Team team)
         {
-            if (team == Team.None) return Side.None;
+            if (team == Team.None || FreeForAll) return Side.None;
             return team == AttackingTeam.Value ? Side.Attack : Side.Defense;
         }
+
+        public bool AreEnemies(PlayerAvatar a, PlayerAvatar b) => a != b && TeamRules.AreEnemies(a.Team, b.Team, FreeForAll);
+
+        // ───────────── IMatchHost ─────────────
+
+        double IMatchHost.Now => NetworkManager.ServerTime.Time;
+        int IMatchHost.RoundNumber => RoundNumber.Value;
+        Team IMatchHost.AttackingTeam { get => AttackingTeam.Value; set => AttackingTeam.Value = value; }
+        IReadOnlyList<PlayerAvatar> IMatchHost.Players => PlayerAvatar.All;
+
+        public void AddTeamScore(Team team, int points)
+        {
+            if (team == Team.Alpha) ScoreAlpha.Value += points;
+            else if (team == Team.Bravo) ScoreBravo.Value += points;
+        }
+
+        public int TeamScore(Team team) => team == Team.Alpha ? ScoreAlpha.Value : team == Team.Bravo ? ScoreBravo.Value : 0;
+
+        public void PublishBomb(in BombNetState state)
+        {
+            if (!state.Equals(Bomb.Value)) Bomb.Value = state;
+        }
+
+        public void PublishModeStatus(in ModeStatus status)
+        {
+            if (!status.Equals(Status.Value)) Status.Value = status;
+        }
+
+        public void BroadcastExplosion(Vector3 position) => ExplosionRpc(position);
+
+        public void RefreshLoadout(PlayerAvatar avatar)
+        {
+            avatar.ServerSetLoadout(_rules.LoadoutFor(avatar));
+            if (avatar.IsAlive) avatar.Simulation.ServerResetWeapons();
+        }
+
+        // ───────────── Lifecycle ─────────────
 
         public override void OnNetworkSpawn()
         {
             Instance = this;
             if (!IsServer) return;
 
-            _settings = GameContent.Instance.heavyBomb.WithOverrides(LaunchConfig.Current);
+            GameContent content = GameContent.Instance;
+            int modeIndex = content.FindModeIndex(LaunchConfig.Current.mode);
+            ModeIndex.Value = (byte)modeIndex;
+            _settings = content.ModeByIndex(modeIndex).WithOverrides(LaunchConfig.Current);
+            _rules = _settings.CreateRules();
+            _rules.Attach(this);
+
             CombatSystem.FriendlyFire = _settings.friendlyFire;
             CombatSystem.LagCompensationEnabled = LaunchConfig.Current.lagCompensation;
             BHLog.Info("Match", LaunchConfig.Current.lagCompensation
                 ? $"Lag compensation ON (max rewind {LaunchConfig.Current.maxRewindMs} ms)"
                 : "Lag compensation OFF");
-            _bomb = new BombStateMachine(_settings.plantDuration, _settings.defuseDuration, _settings.fuseDuration);
-            RoundsToWin.Value = _settings.roundsToWin;
-            RoundTimeLimit.Value = _settings.roundTime;
+            ScoreLimit.Value = _settings.scoreLimit;
+            TimeLimit.Value = _settings.timeLimit;
 
             foreach (SpawnPoint sp in FindObjectsByType<SpawnPoint>(FindObjectsSortMode.InstanceID))
-                (sp.side == Side.Attack ? _attackSpawns : _defenseSpawns).Add(sp);
-            BHLog.Info("Match", $"HeavyBomb ready: {_attackSpawns.Count} attack / {_defenseSpawns.Count} defense spawns, {BombSite.All.Count} sites. " +
-                                $"Round {_settings.roundTime}s, plant {_settings.plantDuration}s, defuse {_settings.defuseDuration}s, fuse {_settings.fuseDuration}s, first to {_settings.roundsToWin}.");
+                (sp.side == Side.Attack ? _attackSpawns : sp.side == Side.Defense ? _defenseSpawns : _freeSpawns).Add(sp);
+            BHLog.Info("Match", $"Mode '{_settings.modeId}' ready — {_rules.Summary}. Spawns: {_attackSpawns.Count} attack / {_defenseSpawns.Count} defense / {_freeSpawns.Count} free, " +
+                                $"{BombSite.All.Count} sites, {(CaptureZone.Main != null ? "capture zone" : "no capture zone")}, max {_settings.maxPlayers} players.");
 
             NetworkManager.SceneManager.OnSynchronizeComplete += OnClientSynchronized;
             PlayerAvatar.ServerKilled += OnPlayerKilled;
             PlayerAvatar.AnyDespawned += OnPlayerDespawned;
 
+            _rules.OnReset();
             SetPhase(MatchPhase.WaitingForPlayers, 0);
 
             // Clients that finished synchronizing before we spawned (and the host's own client).
@@ -163,53 +235,65 @@ namespace BlueHorizon.Match
             PlayerAvatar.AnyDespawned -= OnPlayerDespawned;
         }
 
+        /// <summary>Effective player limit (config and mode). Used by connection approval.</summary>
+        public static int MaxPlayersFor(GameModeDefinition mode, LaunchConfig config) => Mathf.Min(config.maxPlayers, mode != null ? mode.maxPlayers : 10);
+
         // ───────────── Players ─────────────
 
         void OnClientSynchronized(ulong clientId) => ServerSpawnPlayer(clientId);
+
+        bool IsParticipant(PlayerAvatar a) => a.IsSpawned && (FreeForAll || a.Team != Team.None);
 
         void ServerSpawnPlayer(ulong clientId)
         {
             if (PlayerAvatar.TryGet(clientId, out _)) return;
             if (NetworkManager.ConnectedClients.TryGetValue(clientId, out NetworkClient client) && client.PlayerObject != null) return;
 
-            CountTeams(out int alpha, out int bravo, aliveOnly: false);
             string playerName = ConnectionRegistry.NameOf(clientId);
             bool nameInUse = false;
             foreach (PlayerAvatar a in PlayerAvatar.All) nameInUse |= a.PlayerName == playerName;
             ReconnectRecord previous = default;
             bool rejoining = !nameInUse && _reconnects.TryTake(playerName, _matchId, NetworkManager.ServerTime.Time, ReconnectGraceSeconds, out previous);
-            Team team = TeamAssignment.ChooseTeam(alpha, bravo, _settings.teamSize);
-            if (rejoining && (previous.team == Team.Alpha ? alpha : bravo) < _settings.teamSize)
-                team = previous.team;
-            if (team == Team.None)
+
+            Team team = Team.None;
+            if (!FreeForAll)
             {
-                BHLog.Warn("Match", $"No team slot for client {clientId}; disconnecting");
-                NetworkManager.DisconnectClient(clientId, "Both teams are full.");
-                return;
+                CountTeams(out int alpha, out int bravo);
+                team = TeamAssignment.ChooseTeam(alpha, bravo, _settings.teamSize);
+                if (rejoining && (previous.team == Team.Alpha ? alpha : bravo) < _settings.teamSize)
+                    team = previous.team;
+                if (team == Team.None)
+                {
+                    BHLog.Warn("Match", $"No team slot for client {clientId}; disconnecting");
+                    NetworkManager.DisconnectClient(clientId, "Both teams are full.");
+                    return;
+                }
             }
 
             GameObject go = Instantiate(GameContent.Instance.playerPrefab, new Vector3(0f, -100f, 0f), Quaternion.identity);
             var avatar = go.GetComponent<PlayerAvatar>();
             avatar.ServerInitialize(playerName, team);
             go.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId, destroyWithScene: true);
-            BHLog.Info("Match", $"Player '{playerName}' (client {clientId}) joined team {team}");
+            BHLog.Info("Match", FreeForAll
+                ? $"Player '{playerName}' (client {clientId}) joined (free-for-all)"
+                : $"Player '{playerName}' (client {clientId}) joined team {team}");
             if (rejoining)
             {
                 avatar.ServerRestoreStats(previous.kills, previous.deaths, previous.objectiveScore, previous.suppressorMask);
                 BHLog.Info("Match", $"Player '{playerName}' reconnected to match {_matchId}; team and stats restored");
             }
 
-            if (IsWarmup)
-                SpawnAtSideSpawn(avatar);
+            avatar.ServerSetLoadout(_rules.LoadoutFor(avatar));
+            if (IsWarmup || (!_rules.RoundBased && Phase.Value is MatchPhase.Live or MatchPhase.PreRound))
+                SpawnPlayer(avatar);
             else
                 avatar.ServerSetSpectating(); // Joins play at the next round start.
         }
 
         void OnPlayerDespawned(PlayerAvatar avatar)
         {
-            if (!IsServer || _bomb == null) return;
-            ulong id = avatar.OwnerClientId;
-            if (!IsWarmup && Phase.Value != MatchPhase.MatchOver && avatar.Team != Team.None)
+            if (!IsServer || _rules == null) return;
+            if (!IsWarmup && Phase.Value != MatchPhase.MatchOver)
             {
                 _reconnects.Store(avatar.PlayerName, new ReconnectRecord
                 {
@@ -222,46 +306,33 @@ namespace BlueHorizon.Match
                     disconnectTime = NetworkManager.ServerTime.Time,
                 });
             }
-            if (_bomb.State is BombState.Carried or BombState.Planting && _bomb.CarrierId == id)
-            {
-                _bomb.Drop(avatar.Simulation.Position);
-                BHLog.Info("Bomb", $"Carrier '{avatar.PlayerName}' left; bomb dropped");
-            }
-            else if (_bomb.State == BombState.Defusing && _bomb.ActorId == id)
-            {
-                _bomb.CancelDefuse();
-                BHLog.Info("Bomb", $"Defuser '{avatar.PlayerName}' left; defuse cancelled");
-            }
-            PublishBomb();
+            _rules.OnPlayerLeft(avatar);
         }
 
-        void CountTeams(out int alpha, out int bravo, bool aliveOnly)
+        void CountTeams(out int alpha, out int bravo)
         {
             alpha = bravo = 0;
             foreach (PlayerAvatar a in PlayerAvatar.All)
             {
-                if (!a.IsSpawned || (aliveOnly && !a.IsAlive)) continue;
+                if (!a.IsSpawned) continue;
                 if (a.Team == Team.Alpha) alpha++;
                 else if (a.Team == Team.Bravo) bravo++;
             }
         }
 
-        int CountSide(Side side, bool aliveOnly)
+        int ParticipantCount()
         {
             int n = 0;
             foreach (PlayerAvatar a in PlayerAvatar.All)
-            {
-                if (!a.IsSpawned || (aliveOnly && !a.IsAlive)) continue;
-                if (SideOf(a.Team) == side) n++;
-            }
+                if (IsParticipant(a)) n++;
             return n;
         }
 
-        void SpawnAtSideSpawn(PlayerAvatar avatar)
+        void SpawnPlayer(PlayerAvatar avatar)
         {
             Side side = SideOf(avatar.Team);
-            List<SpawnPoint> spawns = side == Side.Attack ? _attackSpawns : _defenseSpawns;
-            if (spawns.Count == 0) spawns = _attackSpawns.Count > 0 ? _attackSpawns : _defenseSpawns;
+            List<SpawnPoint> spawns = side == Side.Attack ? _attackSpawns : side == Side.Defense ? _defenseSpawns : _freeSpawns;
+            if (spawns.Count == 0) spawns = _freeSpawns.Count > 0 ? _freeSpawns : _attackSpawns.Count > 0 ? _attackSpawns : _defenseSpawns;
             if (spawns.Count == 0)
             {
                 BHLog.Error("Match", "Map has no spawn points");
@@ -273,10 +344,14 @@ namespace BlueHorizon.Match
             _occupied.Clear();
             foreach (PlayerAvatar other in PlayerAvatar.All)
             {
-                if (other != avatar && other.IsAlive) _occupied.Add(other.Simulation.Position);
+                if (other == avatar || !other.IsAlive) continue;
+                // Free-for-all spawns avoid every living player; team spawns only need room.
+                if (side == Side.None || !AreEnemies(avatar, other)) _occupied.Add(other.Simulation.Position);
             }
 
-            int index = SpawnSelector.Select(_candidates, _occupied, _spawnCursor++, SpawnClearance);
+            int index = side == Side.None
+                ? SpawnSelector.SelectFarthest(_candidates, _occupied, _spawnCursor++)
+                : SpawnSelector.Select(_candidates, _occupied, _spawnCursor++, SpawnClearance);
             Transform t = spawns[index].transform;
             avatar.ServerSpawnAt(t.position + Vector3.up * 0.05f, t.eulerAngles.y);
         }
@@ -291,7 +366,12 @@ namespace BlueHorizon.Match
 
         bool EnoughPlayers()
         {
-            CountTeams(out int alpha, out int bravo, aliveOnly: false);
+            if (FreeForAll)
+            {
+                int total = ParticipantCount();
+                return total >= (LaunchConfig.Current.devSoloStart ? 1 : Mathf.Max(2, _settings.minPlayersPerTeam));
+            }
+            CountTeams(out int alpha, out int bravo);
             if (LaunchConfig.Current.devSoloStart && alpha + bravo >= 1) return true;
             int min = Mathf.Max(1, _settings.minPlayersPerTeam);
             return alpha >= min && bravo >= min;
@@ -306,7 +386,7 @@ namespace BlueHorizon.Match
             switch (Phase.Value)
             {
                 case MatchPhase.WaitingForPlayers:
-                    WarmupRespawns(now);
+                    Respawns(now, WarmupRespawnDelay);
                     if (EnoughPlayers())
                     {
                         BHLog.Info("Match", $"Enough players; match starts in {_settings.matchStartCountdown}s");
@@ -315,7 +395,7 @@ namespace BlueHorizon.Match
                     break;
 
                 case MatchPhase.Countdown:
-                    WarmupRespawns(now);
+                    Respawns(now, WarmupRespawnDelay);
                     if (!EnoughPlayers())
                     {
                         BHLog.Info("Match", "Not enough players; back to warmup");
@@ -332,14 +412,20 @@ namespace BlueHorizon.Match
                     break;
 
                 case MatchPhase.Live:
-                    UpdateBomb(now);
-                    EvaluateRound(now);
+                    if (ParticipantCount() == 0)
+                    {
+                        BHLog.Warn("Match", "All players left mid-match; returning to warmup");
+                        ResetToWarmup();
+                        break;
+                    }
+                    if (_settings.respawnDelay > 0f) Respawns(now, _settings.respawnDelay);
+                    HandleOutcome(_rules.TickLive(now, Time.deltaTime, phaseOver));
                     break;
 
                 case MatchPhase.PostRound:
                     if (phaseOver)
                     {
-                        if (MatchWinner.Value != Team.None) EndMatch();
+                        if (_matchDecided) EndMatch();
                         else if (!EnoughPlayers())
                         {
                             BHLog.Warn("Match", "Not enough players to continue; returning to warmup");
@@ -355,12 +441,15 @@ namespace BlueHorizon.Match
             }
         }
 
-        void WarmupRespawns(double now)
+        void Respawns(double now, float delay)
         {
             foreach (PlayerAvatar a in PlayerAvatar.All)
             {
-                if (a.IsSpawned && !a.IsAlive && now - a.DeathTime >= WarmupRespawnDelay)
-                    SpawnAtSideSpawn(a);
+                if (IsParticipant(a) && !a.IsAlive && now - a.DeathTime >= delay)
+                {
+                    a.ServerSetLoadout(_rules.LoadoutFor(a));
+                    SpawnPlayer(a);
+                }
             }
         }
 
@@ -368,12 +457,15 @@ namespace BlueHorizon.Match
         {
             _matchId++;
             _reconnects.Clear();
+            _matchDecided = false;
             ScoreAlpha.Value = 0;
             ScoreBravo.Value = 0;
             MatchWinner.Value = Team.None;
+            MatchWinnerName.Value = default;
             LastRoundWinner.Value = Team.None;
             RoundNumber.Value = 0;
             foreach (PlayerAvatar a in PlayerAvatar.All) a.ServerResetStats();
+            _rules.OnMatchStart();
             BHLog.Info("Match", $"Match started with {PlayerAvatar.All.Count} player(s)");
             StartRound();
         }
@@ -381,93 +473,98 @@ namespace BlueHorizon.Match
         void StartRound()
         {
             RoundNumber.Value++;
-            AttackingTeam.Value = MatchRules.AttackingTeamForRound(RoundNumber.Value, _settings.roundsPerHalf);
+            _rules.OnRoundStarting();
             CleanupRoundObjects();
-
-            var attackers = new List<PlayerAvatar>();
             foreach (PlayerAvatar a in PlayerAvatar.All)
             {
-                if (!a.IsSpawned || a.Team == Team.None) continue;
-                SpawnAtSideSpawn(a);
-                if (SideOf(a.Team) == Side.Attack) attackers.Add(a);
+                if (!IsParticipant(a)) continue;
+                a.ServerSetLoadout(_rules.LoadoutFor(a));
+                SpawnPlayer(a);
             }
+            _rules.OnRoundStarted();
 
-            if (attackers.Count > 0)
-            {
-                PlayerAvatar carrier = attackers[_random.Next(attackers.Count)];
-                _bomb.AssignTo(carrier.OwnerClientId);
-                BHLog.Info("Bomb", $"'{carrier.PlayerName}' carries the bomb");
-            }
-            else
-            {
-                _bomb.Deactivate();
-            }
-            PublishBomb();
-
-            BHLog.Info("Match", $"Round {RoundNumber.Value} starting: {AttackingTeam.Value} attacks, {AttackingTeam.Value.Other()} defends");
+            BHLog.Info("Match", FreeForAll
+                ? $"Round {RoundNumber.Value} starting: free-for-all"
+                : $"Round {RoundNumber.Value} starting: {AttackingTeam.Value} attacks, {AttackingTeam.Value.Other()} defends");
             SetPhase(MatchPhase.PreRound, _settings.preRoundTime);
         }
 
         void GoLive()
         {
-            _attackersAtStart = CountSide(Side.Attack, aliveOnly: true);
-            _defendersAtStart = CountSide(Side.Defense, aliveOnly: true);
-            SetPhase(MatchPhase.Live, _settings.roundTime);
-            BHLog.Info("Match", $"Round {RoundNumber.Value} live ({_attackersAtStart} attackers vs {_defendersAtStart} defenders)");
-        }
-
-        void EvaluateRound(double now)
-        {
-            var snapshot = new RoundSnapshot
+            _rules.OnLive();
+            SetPhase(MatchPhase.Live, _settings.timeLimit);
+            int alpha = 0, bravo = 0, total = 0;
+            foreach (PlayerAvatar a in PlayerAvatar.All)
             {
-                attackersAlive = CountSide(Side.Attack, aliveOnly: true),
-                defendersAlive = CountSide(Side.Defense, aliveOnly: true),
-                attackersAtStart = _attackersAtStart,
-                defendersAtStart = _defendersAtStart,
-                bomb = _bomb.State,
-                roundTimeExpired = now >= PhaseEndTime.Value,
-            };
-
-            if (CountSide(Side.Attack, false) + CountSide(Side.Defense, false) == 0)
-            {
-                BHLog.Warn("Match", "All players left mid-round; returning to warmup");
-                ResetToWarmup();
-                return;
+                if (!a.IsAlive) continue;
+                total++;
+                if (SideOf(a.Team) == Side.Attack) alpha++;
+                else if (SideOf(a.Team) == Side.Defense) bravo++;
             }
-
-            RoundResult result = HeavyBombRules.Evaluate(snapshot);
-            if (result.ended) EndRound(result);
+            BHLog.Info("Match", FreeForAll
+                ? $"Round {RoundNumber.Value} live ({total} players)"
+                : $"Round {RoundNumber.Value} live ({alpha} attackers vs {bravo} defenders)");
         }
 
-        void EndRound(RoundResult result)
+        void HandleOutcome(in ModeOutcome outcome)
         {
-            Team winner = result.winner == Side.Attack ? AttackingTeam.Value : AttackingTeam.Value.Other();
-            if (winner == Team.Alpha) ScoreAlpha.Value++;
-            else ScoreBravo.Value++;
-
-            LastRoundWinner.Value = winner;
-            LastRoundReason.Value = result.reason;
-            MatchWinner.Value = MatchRules.MatchWinner(ScoreAlpha.Value, ScoreBravo.Value, _settings.roundsToWin);
-
-            if (!_bomb.IsResolved)
+            switch (outcome.kind)
             {
-                // Freeze the bomb where it is; it no longer ticks after the round ends.
-                if (_bomb.State == BombState.Planting) _bomb.CancelPlant();
-                if (_bomb.State == BombState.Defusing) _bomb.CancelDefuse();
-            }
-            PublishBomb();
+                case OutcomeKind.RoundOver:
+                {
+                    Team winner = outcome.winnerTeam;
+                    AddTeamScore(winner, 1);
+                    LastRoundWinner.Value = winner;
+                    LastRoundReason.Value = new FixedString64Bytes(Truncate(outcome.reason, 60));
+                    Team matchWinner = MatchRules.MatchWinner(ScoreAlpha.Value, ScoreBravo.Value, _settings.scoreLimit);
+                    if (matchWinner != Team.None)
+                    {
+                        _matchDecided = true;
+                        MatchWinner.Value = matchWinner;
+                        MatchWinnerName.Value = new FixedString32Bytes(matchWinner.DisplayName());
+                    }
+                    _rules.OnRoundEnded();
+                    BHLog.Info("Match", $"Round {RoundNumber.Value} ended: {(winner == Team.None ? "draw" : $"{winner} win")} - {outcome.reason}. Score Alpha {ScoreAlpha.Value} - {ScoreBravo.Value} Bravo");
+                    SetPhase(MatchPhase.PostRound, _settings.postRoundTime);
+                    break;
+                }
 
-            BHLog.Info("Match", $"Round {RoundNumber.Value} ended: {winner} ({result.winner.DisplayName()}) win — {HeavyBombRules.Describe(result.reason)}. Score Alpha {ScoreAlpha.Value} - {ScoreBravo.Value} Bravo");
-            SetPhase(MatchPhase.PostRound, _settings.postRoundTime);
+                case OutcomeKind.MatchOver:
+                {
+                    _matchDecided = true;
+                    LastRoundReason.Value = new FixedString64Bytes(Truncate(outcome.reason, 60));
+                    if (outcome.winnerPlayer != null)
+                    {
+                        MatchWinner.Value = outcome.winnerPlayer.Team;
+                        MatchWinnerName.Value = new FixedString32Bytes(outcome.winnerPlayer.PlayerName);
+                    }
+                    else
+                    {
+                        MatchWinner.Value = outcome.winnerTeam;
+                        MatchWinnerName.Value = new FixedString32Bytes(outcome.winnerTeam == Team.None ? "Nobody" : outcome.winnerTeam.DisplayName());
+                    }
+                    LastRoundWinner.Value = MatchWinner.Value;
+                    _rules.OnRoundEnded();
+                    BHLog.Info("Match", $"Round {RoundNumber.Value} ended: {MatchWinnerName.Value} - {outcome.reason}");
+                    EndMatch();
+                    break;
+                }
+            }
         }
+
+        static string Truncate(string s, int max) => string.IsNullOrEmpty(s) ? "" : s.Length <= max ? s : s.Substring(0, max);
 
         void EndMatch()
         {
-            BHLog.Info("Match", $"Match over: {MatchWinner.Value} wins {Mathf.Max(ScoreAlpha.Value, ScoreBravo.Value)}-{Mathf.Min(ScoreAlpha.Value, ScoreBravo.Value)}");
+            string result = FreeForAll || !_rules.RoundBased && _rules is not CaptureAreaMode
+                ? $"{MatchWinnerName.Value} wins"
+                : MatchWinner.Value == Team.None
+                    ? $"draw {ScoreAlpha.Value}-{ScoreBravo.Value}"
+                    : $"{MatchWinner.Value} wins {Mathf.Max(ScoreAlpha.Value, ScoreBravo.Value)}-{Mathf.Min(ScoreAlpha.Value, ScoreBravo.Value)}";
+            BHLog.Info("Match", $"Match over: {result}");
             foreach (PlayerAvatar a in PlayerAvatar.All)
-                BHLog.Info("Match", $"  {a.PlayerName} [{a.Team}] K {a.Kills.Value} / D {a.Deaths.Value} / Obj {a.ObjectiveScore.Value} / shots {a.ServerShotsFired} hits {a.ServerCharacterHits}");
-            _bomb.Deactivate();
-            PublishBomb();
+                BHLog.Info("Match", $"  {a.PlayerName} [{a.Team}] K {a.Kills.Value} / D {a.Deaths.Value} / Score {a.ObjectiveScore.Value} / shots {a.ServerShotsFired} hits {a.ServerCharacterHits}");
+            _rules.OnReset();
             SetPhase(MatchPhase.MatchOver, _settings.matchOverTime);
             NetworkBootstrap.Instance?.NotifyMatchCompleted();
         }
@@ -475,18 +572,22 @@ namespace BlueHorizon.Match
         void ResetToWarmup()
         {
             _reconnects.Clear();
+            _matchDecided = false;
             ScoreAlpha.Value = 0;
             ScoreBravo.Value = 0;
             RoundNumber.Value = 0;
             MatchWinner.Value = Team.None;
+            MatchWinnerName.Value = default;
             AttackingTeam.Value = Team.Alpha;
-            _bomb.Deactivate();
-            PublishBomb();
+            _rules.OnReset();
             CleanupRoundObjects();
             SetPhase(MatchPhase.WaitingForPlayers, 0);
             foreach (PlayerAvatar a in PlayerAvatar.All)
             {
-                if (a.IsSpawned) SpawnAtSideSpawn(a);
+                if (!IsParticipant(a)) continue;
+                a.ServerResetStats();
+                a.ServerSetLoadout(_rules.LoadoutFor(a));
+                SpawnPlayer(a);
             }
             BHLog.Info("Match", "Returned to warmup");
         }
@@ -501,176 +602,21 @@ namespace BlueHorizon.Match
                 if (g.IsSpawned) g.NetworkObject.Despawn(true);
         }
 
-        // ───────────── Bomb ─────────────
-
-        void UpdateBomb(double now)
-        {
-            switch (_bomb.State)
-            {
-                case BombState.Dropped:
-                    foreach (PlayerAvatar a in PlayerAvatar.All)
-                    {
-                        if (!a.IsAlive || SideOf(a.Team) != Side.Attack) continue;
-                        if ((a.Simulation.Position - _bomb.Position).sqrMagnitude <= _settings.pickupRange * _settings.pickupRange
-                            && _bomb.TryPickUp(a.OwnerClientId, true, true) == BombRejectReason.None)
-                        {
-                            BHLog.Info("Bomb", $"'{a.PlayerName}' picked up the bomb");
-                            break;
-                        }
-                    }
-                    break;
-
-                case BombState.Carried:
-                    if (PlayerAvatar.TryGet(_bomb.CarrierId, out PlayerAvatar carrier) && carrier.Simulation.InteractHeld && IsSteady(carrier))
-                    {
-                        int site = BombSite.SiteAt(carrier.Simulation.Position);
-                        BombRejectReason r = _bomb.TryStartPlant(carrier.OwnerClientId, SideOf(carrier.Team) == Side.Attack, carrier.IsAlive,
-                            site, carrier.Simulation.Position, now);
-                        if (r == BombRejectReason.None)
-                            BHLog.Info("Bomb", $"'{carrier.PlayerName}' started planting at site {BombSite.ByIndex(site)?.label}");
-                    }
-                    break;
-
-                case BombState.Planting:
-                    if (!PlayerAvatar.TryGet(_bomb.ActorId, out PlayerAvatar planter) || !planter.IsAlive || !planter.Simulation.InteractHeld
-                        || !IsSteady(planter) || BombSite.SiteAt(planter.Simulation.Position) != _bomb.SiteIndex)
-                    {
-                        _bomb.CancelPlant();
-                        BHLog.Info("Bomb", "Plant interrupted");
-                    }
-                    break;
-
-                case BombState.Planted:
-                    TryStartDefuse(now);
-                    break;
-
-                case BombState.Defusing:
-                    if (!PlayerAvatar.TryGet(_bomb.ActorId, out PlayerAvatar defuser) || !defuser.IsAlive || !defuser.Simulation.InteractHeld
-                        || !IsSteady(defuser) || Vector3.Distance(defuser.Simulation.Position, _bomb.Position) > _settings.defuseRange)
-                    {
-                        _bomb.CancelDefuse();
-                        BHLog.Info("Bomb", "Defuse interrupted");
-                    }
-                    break;
-            }
-
-            BombEvent evt = _bomb.Tick(now);
-            switch (evt)
-            {
-                case BombEvent.Planted:
-                    BHLog.Info("Bomb", $"Bomb planted at site {BombSite.ByIndex(_bomb.SiteIndex)?.label}; detonation in {_settings.fuseDuration}s");
-                    CreditObjective(_bomb.Position, Side.Attack);
-                    break;
-                case BombEvent.Defused:
-                    BHLog.Info("Bomb", "Bomb defused");
-                    if (PlayerAvatar.TryGet(_bomb.ActorId, out PlayerAvatar d)) d.ServerAddObjectiveScore(1);
-                    break;
-                case BombEvent.Exploded:
-                    BHLog.Info("Bomb", $"Bomb exploded at {_bomb.Position}");
-                    ExplodeAt(_bomb.Position);
-                    break;
-            }
-            PublishBomb();
-        }
-
-        void TryStartDefuse(double now)
-        {
-            PlayerAvatar best = null;
-            float bestDist = float.MaxValue;
-            foreach (PlayerAvatar a in PlayerAvatar.All)
-            {
-                if (!a.IsAlive || SideOf(a.Team) != Side.Defense || !a.Simulation.InteractHeld || !IsSteady(a)) continue;
-                float dist = Vector3.Distance(a.Simulation.Position, _bomb.Position);
-                if (dist < bestDist)
-                {
-                    best = a;
-                    bestDist = dist;
-                }
-            }
-            if (best == null) return;
-            if (_bomb.TryStartDefuse(best.OwnerClientId, true, best.IsAlive, bestDist, _settings.defuseRange, now) == BombRejectReason.None)
-                BHLog.Info("Bomb", $"'{best.PlayerName}' started defusing");
-        }
-
-        bool IsSteady(PlayerAvatar a)
-        {
-            Vector3 v = a.Simulation.Velocity;
-            return a.Simulation.Grounded && new Vector2(v.x, v.z).magnitude <= _settings.maxInteractSpeed;
-        }
-
-        void CreditObjective(Vector3 position, Side side)
-        {
-            PlayerAvatar closest = null;
-            float best = float.MaxValue;
-            foreach (PlayerAvatar a in PlayerAvatar.All)
-            {
-                if (SideOf(a.Team) != side) continue;
-                float d = (a.Simulation.Position - position).sqrMagnitude;
-                if (d < best) { best = d; closest = a; }
-            }
-            closest?.ServerAddObjectiveScore(1);
-        }
-
-        void ExplodeAt(Vector3 position)
-        {
-            ExplosionRpc(position);
-            foreach (PlayerAvatar a in PlayerAvatar.All.ToArray())
-            {
-                if (!a.IsAlive) continue;
-                if (Vector3.Distance(a.Simulation.Position, position) <= ExplosionRadius)
-                {
-                    a.Health.ServerKill(new DamageInfo
-                    {
-                        attackerClientId = ulong.MaxValue,
-                        amount = 9999,
-                        source = DamageSource.Explosion,
-                        weaponSlot = 255,
-                        origin = position,
-                        point = a.Simulation.Position,
-                    });
-                }
-            }
-        }
-
-        void PublishBomb()
-        {
-            var state = new BombNetState
-            {
-                state = _bomb.State,
-                actorId = _bomb.State is BombState.Carried ? _bomb.CarrierId : _bomb.ActorId,
-                siteIndex = _bomb.SiteIndex,
-                position = _bomb.Position,
-                actionStart = _bomb.ActionStartTime,
-                actionEnd = _bomb.ActionEndTime,
-                detonationTime = _bomb.DetonationTime,
-            };
-            if (!state.Equals(Bomb.Value)) Bomb.Value = state;
-        }
-
         // ───────────── Kills ─────────────
 
         void OnPlayerKilled(PlayerAvatar victim, DamageInfo info)
         {
-            ulong id = victim.OwnerClientId;
-            if (_bomb.State is BombState.Carried or BombState.Planting && _bomb.CarrierId == id)
-            {
-                _bomb.Drop(victim.Simulation.Position);
-                BHLog.Info("Bomb", $"Carrier '{victim.PlayerName}' died; bomb dropped");
-            }
-            else if (_bomb.State == BombState.Defusing && _bomb.ActorId == id)
-            {
-                _bomb.CancelDefuse();
-                BHLog.Info("Bomb", "Defuser died; defuse cancelled");
-            }
-            PublishBomb();
-
             PlayerAvatar.TryGet(info.attackerClientId, out PlayerAvatar killer);
             string weapon = info.source switch
             {
                 DamageSource.Explosion => "Bomb",
                 DamageSource.World => "World",
-                _ => GameContent.Instance.WeaponForSlot(info.weaponSlot)?.displayName ?? "Weapon",
+                _ => killer != null ? killer.WeaponInSlot(info.weaponSlot)?.displayName ?? "Weapon" : "Weapon",
             };
+
+            // Score/ladder changes happen before the feed so the log shows the cause first.
+            if (Phase.Value == MatchPhase.Live) _rules.OnPlayerKilled(victim, killer, info);
+
             bool headshot = info.source == DamageSource.Weapon && info.zone == HitZone.Head;
             string killerName = killer != null ? killer.PlayerName : "";
             string killerLabel = killer != null ? $"{killerName} [{killer.Team}]" : "<world>";

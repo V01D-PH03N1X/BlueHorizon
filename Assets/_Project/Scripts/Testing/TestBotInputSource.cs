@@ -121,7 +121,8 @@ namespace BlueHorizon.Testing
                 if (Vector3.Angle(view, aimPoint - eye) < AimTolerance)
                 {
                     _toggleFire = !_toggleFire;
-                    if (_sim.ActiveSlot == 0 || _toggleFire) cmd.buttons |= InputButtons.Fire;
+                    bool automatic = _avatar.WeaponInSlot(_sim.ActiveSlot)?.fireMode == Weapons.FireMode.Automatic;
+                    if (automatic || _toggleFire) cmd.buttons |= InputButtons.Fire;
                 }
                 cmd.buttons |= InputButtons.Crouch;
                 Finish(ref cmd);
@@ -142,7 +143,17 @@ namespace BlueHorizon.Testing
             Vector3? goal = null;
             bool interact = false;
 
-            if (side == Side.Attack)
+            if (match.FreeForAll)
+            {
+                goal = Patrol();
+            }
+            else if (match.Mode is GameModes.CaptureAreaSettings)
+            {
+                goal = FollowRoute(side, CaptureRouteIndex, match);
+                CaptureZone zone = CaptureZone.Main;
+                if (goal == null && zone != null && !zone.Contains(_sim.Position)) goal = zone.transform.position;
+            }
+            else if (side == Side.Attack)
             {
                 if (!_usedSmoke && _phaseTime > 1.5f)
                 {
@@ -177,7 +188,8 @@ namespace BlueHorizon.Testing
                 }
                 else
                 {
-                    int site = (int)(me % 2);
+                    // Duel: both players head for the same site so they meet; HeavyBomb defenders split by id.
+                    int site = match.Mode is GameModes.DuelSettings ? TargetSite(match) : (int)(me % 2);
                     goal = FollowRoute(Side.Defense, site, match);
                     if (goal == null && !_usedWall)
                     {
@@ -222,11 +234,59 @@ namespace BlueHorizon.Testing
             cmd.pitch = _pitch;
         }
 
+        /// <summary>BotRoute.siteIndex used for routes to the capture zone.</summary>
+        public const int CaptureRouteIndex = 2;
+
+        BotRoute _patrolRoute;
+        int _patrolLife = -1;
+
+        /// <summary>Free-for-all: walk the route closest to where we spawned, then back and forth along it.</summary>
+        Vector3? Patrol()
+        {
+            int life = _avatar.Deaths.Value;
+            if (_patrolRoute == null || _patrolLife != life)
+            {
+                _patrolLife = life;
+                _patrolRoute = null;
+                float best = float.MaxValue;
+                int bestIndex = 0;
+                foreach (BotRoute r in BotRoute.All)
+                {
+                    for (int i = 0; i < r.points.Length; i++)
+                    {
+                        float d = (r.points[i] - _sim.Position).sqrMagnitude;
+                        if (d < best) { best = d; _patrolRoute = r; bestIndex = i; }
+                    }
+                }
+                if (_patrolRoute == null) return null;
+                _path.Clear();
+                _path.AddRange(_patrolRoute.points);
+                _pathIndex = bestIndex;
+                _route = null;
+            }
+
+            while (true)
+            {
+                while (_pathIndex < _path.Count)
+                {
+                    Vector3 p = _path[_pathIndex];
+                    Vector3 flat = p - _sim.Position;
+                    flat.y = 0f;
+                    if (flat.magnitude > 0.9f) return p;
+                    _pathIndex++;
+                }
+                if (_path.Count < 2) return null;
+                _path.Reverse();
+                _pathIndex = 1;
+            }
+        }
+
         static int TargetSite(MatchManager match) =>
             LaunchConfig.Current.botSite >= 0 ? LaunchConfig.Current.botSite : match.RoundNumber.Value % 2 == 1 ? 0 : 1;
 
         Vector3? FollowRoute(Side side, int site, MatchManager match)
         {
+            _patrolRoute = null;
             bool newRound = _routeRound != match.RoundNumber.Value;
             if (_route == null || _route.side != side || _route.siteIndex != site || newRound)
             {
@@ -279,7 +339,7 @@ namespace BlueHorizon.Testing
             float bestDist = VisionRange;
             foreach (PlayerAvatar other in PlayerAvatar.All)
             {
-                if (other == _avatar || !other.IsAlive || other.Team == _avatar.Team || other.Team == Team.None) continue;
+                if (!other.IsAlive || !MatchManager.Instance.AreEnemies(_avatar, other)) continue;
                 Vector3 target = other.transform.position + Vector3.up * 1.2f;
                 float dist = Vector3.Distance(eye, target);
                 if (dist > bestDist) continue;

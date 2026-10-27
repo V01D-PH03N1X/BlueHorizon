@@ -3,6 +3,7 @@
     "rootNamespace": "BlueHorizon.Tests",
     "references": [
         "BlueHorizon.Runtime",
+        "Unity.Netcode.Runtime",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

@@ -231,7 +231,7 @@ namespace BlueHorizon.Player
         void ResetWeapons()
         {
             GameContent content = GameContent.Instance;
-            _weapons = content != null ? WeaponSimulation.Fresh(content.primaryWeapon, content.secondaryWeapon) : default;
+            _weapons = content != null ? WeaponSimulation.Fresh(_avatar.WeaponInSlot(0), _avatar.WeaponInSlot(1)) : default;
             _simTime = 0f;
         }
 
@@ -529,8 +529,17 @@ namespace BlueHorizon.Player
             }
             else
             {
-                TeleportRpc(MakeOwnerState());
+                TeleportRpc(MakeOwnerState(), keepLook: false);
             }
+        }
+
+        /// <summary>Server: the loadout changed mid-life (Weapon Game level-up). Resets weapons, keeps position and view.</summary>
+        public void ServerResetWeapons()
+        {
+            ResetWeapons();
+            _teleportId++;
+            _queue.Clear();
+            if (!IsOwner) TeleportRpc(MakeOwnerState(), keepLook: true);
         }
 
         // ───────────── Owner prediction ─────────────
@@ -641,7 +650,7 @@ namespace BlueHorizon.Player
         }
 
         [Rpc(SendTo.Owner)]
-        void TeleportRpc(OwnerState state)
+        void TeleportRpc(OwnerState state, bool keepLook)
         {
             if (IsServer) return;
             _teleportId = state.teleportId;
@@ -650,6 +659,8 @@ namespace BlueHorizon.Player
             // Any history entries are from before the teleport; mark them unusable.
             for (int i = 0; i < _history.Length; i++) _history[i].command.sequence = 0;
             _renderFrom = _renderTo = _motor.position;
+            _correctionOffset = Vector3.zero;
+            if (keepLook) return;
             _input?.SetLook(state.yaw, 0f);
             transform.rotation = Quaternion.Euler(0f, state.yaw, 0f);
             Teleported?.Invoke();

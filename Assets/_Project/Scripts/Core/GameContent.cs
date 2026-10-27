@@ -17,6 +17,8 @@ namespace BlueHorizon.Core
 
         [Header("Rules")]
         public HeavyBombSettings heavyBomb;
+        [Tooltip("All playable modes; selected on the server with -mode <modeId>. The first entry is the default.")]
+        public GameModeDefinition[] modes;
         public AgentDefinition defaultAgent;
 
         [Header("Loadout")]
@@ -24,6 +26,8 @@ namespace BlueHorizon.Core
         public WeaponDefinition secondaryWeapon;
         [Tooltip("Muzzle attachment players can toggle during the pre-round phase.")]
         public AttachmentDefinition suppressor;
+        [Tooltip("Every weapon in the game; loadouts and the Weapon Game ladder refer to these indices.")]
+        public WeaponDefinition[] weapons;
 
         [Header("Network prefabs")]
         public GameObject playerPrefab;
@@ -43,7 +47,26 @@ namespace BlueHorizon.Core
 
         public void MakeCurrent() => Instance = this;
 
-        public WeaponDefinition WeaponForSlot(int slot) => slot == 0 ? primaryWeapon : secondaryWeapon;
+        public WeaponDefinition WeaponByIndex(int index)
+        {
+            if (weapons != null && weapons.Length > 0)
+                return index >= 0 && index < weapons.Length ? weapons[index] : null;
+            return index == 0 ? primaryWeapon : index == 1 ? secondaryWeapon : null; // Before the weapon list existed.
+        }
+
+        public GameModeDefinition ModeByIndex(int index) =>
+            modes != null && index >= 0 && index < modes.Length ? modes[index] : heavyBomb;
+
+        /// <summary>Index of the mode with this id (case-insensitive), or 0 (the default mode).</summary>
+        public int FindModeIndex(string modeId)
+        {
+            if (modes == null) return 0;
+            for (int i = 0; i < modes.Length; i++)
+            {
+                if (modes[i] != null && string.Equals(modes[i].modeId, modeId, System.StringComparison.OrdinalIgnoreCase)) return i;
+            }
+            return 0;
+        }
 
         public GameObject[] NetworkPrefabs => new[] { playerPrefab, matchManagerPrefab, smokeGrenadePrefab, smokeCloudPrefab, wayblockerPrefab };
     }

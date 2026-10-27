@@ -21,6 +21,32 @@ namespace BlueHorizon.Match
     public static class SpawnSelector
     {
         /// <summary>
+        /// Free-for-all spawn: the candidate whose nearest threat is farthest away. Ties (e.g. no threats) rotate with
+        /// <paramref name="startIndex"/> so consecutive spawns spread out. Returns -1 when there are no candidates.
+        /// </summary>
+        public static int SelectFarthest(IReadOnlyList<Vector3> candidates, IReadOnlyList<Vector3> threats, int startIndex)
+        {
+            if (candidates == null || candidates.Count == 0) return -1;
+            int count = candidates.Count;
+            int start = ((startIndex % count) + count) % count;
+            int best = start;
+            float bestDistance = -1f;
+            for (int n = 0; n < count; n++)
+            {
+                int i = (start + n) % count;
+                float nearest = float.MaxValue;
+                for (int j = 0; j < threats.Count; j++)
+                    nearest = Mathf.Min(nearest, (threats[j] - candidates[i]).sqrMagnitude);
+                if (nearest > bestDistance + 1e-3f)
+                {
+                    bestDistance = nearest;
+                    best = i;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
         /// Returns the index of the first candidate (starting at <paramref name="startIndex"/>, wrapping) that is at least
         /// <paramref name="clearance"/> metres from every occupied position. Falls back to the start index when all are blocked.
         /// Returns -1 when there are no candidates.

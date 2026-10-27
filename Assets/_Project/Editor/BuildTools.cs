@@ -93,7 +93,7 @@ namespace BlueHorizon.EditorTools
             {
                 role = LaunchRole.Server,
                 port = LaunchConfig.DefaultPort,
-                maxPlayers = 10,
+                maxPlayers = 16, // The selected mode caps this further (HeavyBomb 10, Deathmatch 15, ...).
             };
             File.WriteAllText(path, JsonUtility.ToJson(config, true));
         }

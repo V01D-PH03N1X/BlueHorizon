@@ -478,6 +478,7 @@ namespace BlueHorizon.UI
             if (!inMatch) return;
 
             if (_bombPresenter == null) _bombPresenter = BombPresenter.Ensure();
+            ZonePresenter.EnsureFor(match);
             BindLocal();
             UpdateScorebar(match);
             UpdatePhaseEvents(match);
@@ -528,8 +529,22 @@ namespace BlueHorizon.UI
 
         void UpdateScorebar(MatchManager match)
         {
-            _scoreAlpha.text = match.ScoreAlpha.Value.ToString(CultureInfo.InvariantCulture);
-            _scoreBravo.text = match.ScoreBravo.Value.ToString(CultureInfo.InvariantCulture);
+            GameModeDefinition mode = match.Mode;
+            PlayerAvatar local = PlayerAvatar.Local;
+            bool ffa = match.FreeForAll;
+
+            if (ffa)
+            {
+                // Free-for-all: own score on the left, leader on the right.
+                PlayerAvatar leader = Leader();
+                _scoreAlpha.text = local != null ? local.ObjectiveScore.Value.ToString(CultureInfo.InvariantCulture) : "0";
+                _scoreBravo.text = leader != null ? leader.ObjectiveScore.Value.ToString(CultureInfo.InvariantCulture) : "0";
+            }
+            else
+            {
+                _scoreAlpha.text = match.ScoreAlpha.Value.ToString(CultureInfo.InvariantCulture);
+                _scoreBravo.text = match.ScoreBravo.Value.ToString(CultureInfo.InvariantCulture);
+            }
 
             BombNetState bomb = match.Bomb.Value;
             bool bombLive = match.Phase.Value == MatchPhase.Live && bomb.state is BombState.Planted or BombState.Defusing;
@@ -538,26 +553,68 @@ namespace BlueHorizon.UI
             _timer.text = bombLive ? FormatTime((float)(bomb.detonationTime - now)) : FormatTime(match.PhaseTimeRemaining);
             if (match.Phase.Value == MatchPhase.WaitingForPlayers) _timer.text = "--:--";
 
+            string modeName = mode != null ? mode.displayName.ToUpperInvariant() : "";
             _phaseLabel.text = match.Phase.Value switch
             {
-                MatchPhase.WaitingForPlayers => "WARMUP · WAITING FOR PLAYERS",
+                MatchPhase.WaitingForPlayers => $"{modeName} · WARMUP",
                 MatchPhase.Countdown => "MATCH STARTING",
-                MatchPhase.PreRound => $"ROUND {match.RoundNumber.Value} · BUY TIME",
-                MatchPhase.Live => bombLive ? $"BOMB PLANTED · SITE {BombSite.ByIndex(bomb.siteIndex)?.label}" : $"ROUND {match.RoundNumber.Value} · FIRST TO {match.RoundsToWin.Value}",
+                MatchPhase.PreRound => match.RoundBased ? $"ROUND {match.RoundNumber.Value} · BUY TIME" : $"{modeName} · GET READY",
+                MatchPhase.Live => LivePhaseLabel(match, bombLive, bomb),
                 MatchPhase.PostRound => "ROUND OVER",
                 _ => "MATCH OVER",
             };
 
-            PlayerAvatar local = PlayerAvatar.Local;
             if (local != null)
             {
-                Side side = match.SideOf(local.Team);
-                string role = match.IsWarmup ? "WARMUP" : side == Side.Attack ? "ATTACKING" : "DEFENDING";
+                string role;
+                if (match.IsWarmup) role = "WARMUP";
+                else if (mode is HeavyBombSettings) role = match.SideOf(local.Team) == Side.Attack ? "ATTACKING" : "DEFENDING";
+                else role = modeName;
                 string bombNote = bomb.actorId == local.OwnerClientId && bomb.state == BombState.Carried ? " · YOU CARRY THE BOMB" : "";
-                _sideBanner.text = $"{local.PlayerName.ToUpperInvariant()} · TEAM {local.Team.DisplayName().ToUpperInvariant()} · {role} · {local.Agent?.callsign?.ToUpperInvariant()}{bombNote}";
-                _sideBanner.style.color = PlayerPresenter.TeamColor(local.Team);
+                string team = ffa ? "FREE FOR ALL" : $"TEAM {local.Team.DisplayName().ToUpperInvariant()}";
+                _sideBanner.text = $"{local.PlayerName.ToUpperInvariant()} · {team} · {role} · {local.Agent?.callsign?.ToUpperInvariant()}{bombNote}";
+                _sideBanner.style.color = ffa ? new Color(0.85f, 0.88f, 0.95f) : PlayerPresenter.TeamColor(local.Team);
             }
         }
+
+        static string LivePhaseLabel(MatchManager match, bool bombLive, in BombNetState bomb)
+        {
+            switch (match.Mode)
+            {
+                case HeavyBombSettings:
+                    return bombLive ? $"BOMB PLANTED · SITE {BombSite.ByIndex(bomb.siteIndex)?.label}" : $"ROUND {match.RoundNumber.Value} · FIRST TO {match.ScoreLimit.Value}";
+                case DuelSettings:
+                    return $"DUEL · ROUND {match.RoundNumber.Value} · FIRST TO {match.ScoreLimit.Value}";
+                case CaptureAreaSettings:
+                {
+                    ModeStatus z = match.Status.Value;
+                    if (z.contested) return "AREA CONTESTED";
+                    if (z.capturing != Team.None) return $"{z.capturing.DisplayName().ToUpperInvariant()} CAPTURING {z.progress * 100f:0}%";
+                    return z.owner == Team.None ? $"AREA NEUTRAL · FIRST TO {match.ScoreLimit.Value}" : $"{z.owner.DisplayName().ToUpperInvariant()} HOLDS THE AREA";
+                }
+                case WeaponGameSettings wg:
+                {
+                    PlayerAvatar local = PlayerAvatar.Local;
+                    int level = local != null ? local.ObjectiveScore.Value + 1 : 1;
+                    return $"WEAPON GAME · LEVEL {level}/{wg.ladder.Length}";
+                }
+                default:
+                    return $"{match.Mode?.displayName.ToUpperInvariant()} · FIRST TO {match.ScoreLimit.Value}";
+            }
+        }
+
+        static PlayerAvatar Leader()
+        {
+            PlayerAvatar best = null;
+            foreach (PlayerAvatar a in PlayerAvatar.All)
+            {
+                if (best == null || a.ObjectiveScore.Value > best.ObjectiveScore.Value
+                    || (a.ObjectiveScore.Value == best.ObjectiveScore.Value && a.Deaths.Value < best.Deaths.Value))
+                    best = a;
+            }
+            return best;
+        }
+
 
         void UpdatePhaseEvents(MatchManager match)
         {
@@ -576,9 +633,14 @@ namespace BlueHorizon.UI
                         break;
                     case MatchPhase.PreRound:
                         GameAudio.Play2D(Sfx.RoundStart, 0.6f);
-                        Announce($"ROUND {match.RoundNumber.Value}",
-                            side == Side.Attack ? "ATTACK · Plant the bomb at site A or B" : "DEFEND · Stop the plant or defuse the bomb",
-                            side == Side.Attack ? PlayerPresenter.BravoColor : PlayerPresenter.AlphaColor, 4f);
+                        if (match.Mode is HeavyBombSettings)
+                            Announce($"ROUND {match.RoundNumber.Value}",
+                                side == Side.Attack ? "ATTACK · Plant the bomb at site A or B" : "DEFEND · Stop the plant or defuse the bomb",
+                                side == Side.Attack ? PlayerPresenter.BravoColor : PlayerPresenter.AlphaColor, 4f);
+                        else if (match.RoundBased)
+                            Announce($"ROUND {match.RoundNumber.Value}", match.Mode?.description ?? "", new Color(0.7f, 0.85f, 1f), 3f);
+                        else
+                            Announce(match.Mode?.displayName.ToUpperInvariant() ?? "", match.Mode?.description ?? "", new Color(0.7f, 0.85f, 1f), 4f);
                         break;
                     case MatchPhase.Live:
                         if (_lastPhase == MatchPhase.PreRound) Announce("GO", "", Color.white, 1f);
@@ -586,9 +648,10 @@ namespace BlueHorizon.UI
                     case MatchPhase.PostRound:
                         Team winner = match.LastRoundWinner.Value;
                         bool won = local != null && winner == local.Team;
-                        Announce(won ? "ROUND WON" : "ROUND LOST",
-                            $"{winner.DisplayName().ToUpperInvariant()} · {HeavyBombRules.Describe(match.LastRoundReason.Value)}",
-                            won ? new Color(0.45f, 1f, 0.7f) : new Color(1f, 0.45f, 0.4f), 5f);
+                        bool draw = winner == Team.None;
+                        Announce(draw ? "ROUND DRAWN" : won ? "ROUND WON" : "ROUND LOST",
+                            $"{(draw ? "NO POINT" : winner.DisplayName().ToUpperInvariant())} · {match.LastRoundReason.Value}",
+                            draw ? new Color(0.8f, 0.85f, 0.95f) : won ? new Color(0.45f, 1f, 0.7f) : new Color(1f, 0.45f, 0.4f), 5f);
                         break;
                 }
                 _lastPhase = phase;
@@ -662,7 +725,7 @@ namespace BlueHorizon.UI
             PlayerAvatar local = PlayerAvatar.Local;
             if (local == null) return;
             WeaponSimState w = local.Simulation.Weapons;
-            WeaponDefinition def = GameContent.Instance.WeaponForSlot(w.activeSlot);
+            WeaponDefinition def = local.WeaponInSlot(w.activeSlot);
             short mag = w.Magazine(w.activeSlot);
             _ammoMag.text = w.IsReloading ? "··" : mag.ToString(CultureInfo.InvariantCulture);
             _ammoMag.EnableInClassList("ammo-low", def != null && mag <= def.magazineSize / 4);
@@ -753,11 +816,17 @@ namespace BlueHorizon.UI
                 else if (side == Side.Defense && bomb.state == BombState.Planted)
                 {
                     float d = Vector3.Distance(pos, bomb.position);
-                    text = d <= (match.Settings != null ? match.Settings.defuseRange : 1.9f) ? "Hold F to defuse" : "Bomb planted · find and defuse it";
+                    text = d <= (match.HeavyBomb != null ? match.HeavyBomb.defuseRange : 1.9f) ? "Hold F to defuse" : "Bomb planted · find and defuse it";
                 }
                 else if (bomb.state == BombState.Defusing && side == Side.Attack)
                 {
                     text = "THE BOMB IS BEING DEFUSED";
+                }
+                else if (match.Mode is CaptureAreaSettings && CaptureZone.Main != null && CaptureZone.Main.Contains(pos))
+                {
+                    ModeStatus z = match.Status.Value;
+                    text = z.contested ? "IN THE AREA · CONTESTED" : z.owner == local.Team ? "IN THE AREA · HOLDING" : "IN THE AREA · CAPTURING";
+                    if (!z.contested && z.capturing == local.Team) progress = z.progress;
                 }
             }
 
@@ -781,7 +850,8 @@ namespace BlueHorizon.UI
             bool dead = local != null && !local.IsAlive;
             Show(_deadOverlay, dead);
             MatchManager match = MatchManager.Instance;
-            _deadBanner.text = !dead ? "" : match != null && match.IsWarmup ? "ELIMINATED · RESPAWNING" : "ELIMINATED · SPECTATING (SPACE TO SWITCH)";
+            bool respawning = match != null && (match.IsWarmup || (match.Mode != null && match.Mode.respawnDelay > 0f && match.Phase.Value == MatchPhase.Live));
+            _deadBanner.text = !dead ? "" : respawning ? "ELIMINATED · RESPAWNING" : "ELIMINATED · SPECTATING (SPACE TO SWITCH)";
         }
 
         void UpdateKillFeed()
@@ -840,47 +910,85 @@ namespace BlueHorizon.UI
         void UpdateScoreboard(MatchManager match, VisualElement target)
         {
             target.Clear();
+            if (match.FreeForAll)
+            {
+                VisualElement block = Box(target, "scoreboard-team");
+                Label title = Text(block, $"{match.Mode?.displayName.ToUpperInvariant()} · FIRST TO {match.ScoreLimit.Value}", "heading");
+                ScoreboardHeader(block, match.Mode is WeaponGameSettings ? "LEVEL" : "SCORE");
+                var players = new List<PlayerAvatar>(PlayerAvatar.All);
+                players.Sort((a, b) => b.ObjectiveScore.Value != a.ObjectiveScore.Value
+                    ? b.ObjectiveScore.Value.CompareTo(a.ObjectiveScore.Value)
+                    : a.Deaths.Value.CompareTo(b.Deaths.Value));
+                bool ladder = match.Mode is WeaponGameSettings;
+                foreach (PlayerAvatar a in players) ScoreboardRow(block, a, ladder ? a.ObjectiveScore.Value + 1 : a.ObjectiveScore.Value, "");
+                return;
+            }
+
             foreach (Team team in ScoreboardTeams)
             {
                 VisualElement block = Box(target, "scoreboard-team");
                 int score = team == Team.Alpha ? match.ScoreAlpha.Value : match.ScoreBravo.Value;
-                Side side = match.SideOf(team);
-                Label title = Text(block, $"TEAM {team.DisplayName().ToUpperInvariant()} · {score} · {(match.IsWarmup ? "WARMUP" : side.DisplayName().ToUpperInvariant())}", "heading");
+                string role = match.IsWarmup ? "WARMUP" : match.Mode is HeavyBombSettings ? match.SideOf(team).DisplayName().ToUpperInvariant() : match.Mode?.displayName.ToUpperInvariant();
+                Label title = Text(block, $"TEAM {team.DisplayName().ToUpperInvariant()} · {score} · {role}", "heading");
                 title.style.color = PlayerPresenter.TeamColor(team);
-                VisualElement header = Box(block, "scoreboard-header");
-                Text(header, "PLAYER", "col-name");
-                Text(header, "KILLS", "col-num");
-                Text(header, "DEATHS", "col-num");
-                Text(header, "OBJ", "col-num");
-                Text(header, "", "col-status");
+                ScoreboardHeader(block, "OBJ");
 
                 foreach (PlayerAvatar a in PlayerAvatar.All)
                 {
                     if (a.Team != team) continue;
-                    VisualElement row = Box(block, "scoreboard-row");
-                    if (a == PlayerAvatar.Local) row.AddToClassList("scoreboard-row-local");
-                    if (!a.IsAlive) row.AddToClassList("scoreboard-row-dead");
-                    Text(row, a.PlayerName, "col-name");
-                    Text(row, a.Kills.Value.ToString(CultureInfo.InvariantCulture), "col-num");
-                    Text(row, a.Deaths.Value.ToString(CultureInfo.InvariantCulture), "col-num");
-                    Text(row, a.ObjectiveScore.Value.ToString(CultureInfo.InvariantCulture), "col-num");
                     bool carrier = match.Bomb.Value.actorId == a.OwnerClientId && match.Bomb.Value.state == BombState.Carried
                                    && PlayerAvatar.Local != null && PlayerAvatar.Local.Team == a.Team;
-                    Text(row, !a.IsAlive ? "DEAD" : carrier ? "BOMB" : "", "col-status");
+                    ScoreboardRow(block, a, a.ObjectiveScore.Value, carrier ? "BOMB" : "");
                 }
             }
         }
 
+        static void ScoreboardHeader(VisualElement block, string scoreColumn)
+        {
+            VisualElement header = Box(block, "scoreboard-header");
+            Text(header, "PLAYER", "col-name");
+            Text(header, "KILLS", "col-num");
+            Text(header, "DEATHS", "col-num");
+            Text(header, scoreColumn, "col-num");
+            Text(header, "", "col-status");
+        }
+
+        static void ScoreboardRow(VisualElement block, PlayerAvatar a, int score, string status)
+        {
+            VisualElement row = Box(block, "scoreboard-row");
+            if (a == PlayerAvatar.Local) row.AddToClassList("scoreboard-row-local");
+            if (!a.IsAlive) row.AddToClassList("scoreboard-row-dead");
+            Text(row, a.PlayerName, "col-name");
+            Text(row, a.Kills.Value.ToString(CultureInfo.InvariantCulture), "col-num");
+            Text(row, a.Deaths.Value.ToString(CultureInfo.InvariantCulture), "col-num");
+            Text(row, score.ToString(CultureInfo.InvariantCulture), "col-num");
+            Text(row, !a.IsAlive ? "DEAD" : status, "col-status");
+        }
+
+
         void UpdateVictory(MatchManager match)
         {
-            Team winner = match.MatchWinner.Value;
             PlayerAvatar local = PlayerAvatar.Local;
-            bool won = local != null && winner == local.Team;
-            _victoryTitle.text = winner == Team.None ? "MATCH OVER" : won ? "VICTORY" : "DEFEAT";
-            _victoryTitle.style.color = won ? new Color(0.45f, 1f, 0.7f) : new Color(1f, 0.45f, 0.4f);
-            _victoryScore.text = $"ALPHA {match.ScoreAlpha.Value} — {match.ScoreBravo.Value} BRAVO";
-            _victorySub.text = $"{winner.DisplayName()} wins the match · next match in {Mathf.CeilToInt(match.PhaseTimeRemaining)}s";
+            string winnerName = match.MatchWinnerName.Value.ToString();
+            bool won, draw;
+            if (match.FreeForAll)
+            {
+                won = local != null && winnerName == local.PlayerName;
+                draw = string.IsNullOrEmpty(winnerName) || winnerName == "Nobody";
+                _victoryScore.text = $"{winnerName.ToUpperInvariant()} WINS";
+            }
+            else
+            {
+                Team winner = match.MatchWinner.Value;
+                won = local != null && winner == local.Team;
+                draw = winner == Team.None;
+                _victoryScore.text = $"ALPHA {match.ScoreAlpha.Value} — {match.ScoreBravo.Value} BRAVO";
+            }
+            _victoryTitle.text = draw ? "DRAW" : won ? "VICTORY" : "DEFEAT";
+            _victoryTitle.style.color = draw ? new Color(0.85f, 0.88f, 0.95f) : won ? new Color(0.45f, 1f, 0.7f) : new Color(1f, 0.45f, 0.4f);
+            _victorySub.text = $"{match.LastRoundReason.Value} · next match in {Mathf.CeilToInt(match.PhaseTimeRemaining)}s";
         }
+
 
         void SetPaused(bool paused)
         {

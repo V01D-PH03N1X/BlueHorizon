@@ -20,6 +20,35 @@ The multiplayer scenarios run the **real builds over UDP**: one headless dedicat
 by `TestBotInputSource`, which only produces input commands — every action passes the same server validation as a
 human player. The script checks the server log for the expected events.
 
+## Results — Milestone 3 (2026-10-27)
+
+### EditMode — 97 / 97 passed
+New: hostility rules (team / free-for-all), duel timeout winner, free-for-all leader and tie-breaks, weapon ladder
+advance and win, capture zone (capture time, multi-player speed and cap, contested, reverting enemy progress, decay,
+scoring), farthest spawn selection, mode command-line flags, mode player caps.
+
+### Automated multiplayer scenarios — 10 / 10 passed (M3 build)
+The six HeavyBomb scenarios still pass after the `MatchManager` refactor, plus:
+
+| Scenario | Setup | Result |
+|---|---|---|
+| duel | 2 bots, first to 3, 45 s rounds | 5 decisive rounds, Alpha wins 3-2 |
+| deathmatch | 4 bots, first to 5 kills | "5 kills reached", 11 kills, server limit 15 |
+| capture | 2v2, first to 25 points | area captured, 25 points reached (a separate graphical run saw 4 ownership changes) |
+| weapongame | 4 bots | several players advanced through the ladder; "Final weapon kill" ended the match |
+
+### Load test — 15 players, Deathmatch, 150 s
+Server avg 8.34 ms (120 Hz cap), p99 ≤ 8.6 ms, every client 900 inputs per 15 s, 344 kills, 56 ability uses,
+0 exceptions, client corrections 0–11 per 30 s. GC ~25 gen-0 per 15 s (heap 3 MB).
+
+### Graphical check
+Capture: team points, "BRAVO HOLDS THE AREA" / "BRAVO CAPTURING 36%", "IN THE AREA · HOLDING" prompt. Deathmatch:
+own score vs. leader, "FREE FOR ALL" banner, red hostile kill-feed names. Found and fixed: the zone volume tinted the
+whole screen when standing in it (replaced by floor plate + posts).
+
+### Not verified in M3
+Human play of the new modes; win-rate balance; Weapon Game with more than two weapons.
+
 ## Results — Milestone 2 (2026-10-26)
 
 ### EditMode — 85 / 85 passed

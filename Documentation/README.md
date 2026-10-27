@@ -64,14 +64,16 @@ Configuration precedence: defaults → `server.json` next to the executable (or 
 
 | Argument | Meaning |
 |---|---|
+| `-mode ID` | `heavybomb` (default), `duel`, `deathmatch`, `capture`, `weapongame` |
 | `-port N` | UDP port (default 7777) |
 | `-listen ADDR` | listen address (default 0.0.0.0) |
-| `-maxPlayers N` | connection limit, 1–10 |
+| `-maxPlayers N` | connection limit, 1–16; the mode caps it further (HeavyBomb 10, Duel 2, Deathmatch 15, Capture 10, Weapon Game 12) |
 | `-devSoloStart` | allow a match to start with one player (development) |
 | `-minPlayersPerTeam N` | players required per team (default 1) |
-| `-roundTime S`, `-preRoundTime S`, `-postRoundTime S` | round timing overrides |
+| `-roundTime S` (`-timeLimit`), `-preRoundTime S`, `-postRoundTime S` | round/match length and phase timing |
+| `-respawnDelay S` | respawn delay during live play (continuous modes) |
 | `-plantTime S`, `-defuseTime S`, `-fuseTime S` | bomb timing overrides |
-| `-roundsToWin N` | match length (default 7) |
+| `-roundsToWin N` (`-scoreLimit`) | rounds, kills or points to win (mode dependent) |
 | `-quitAfter S`, `-quitAfterMatches N` | automated-test lifetime |
 | `-perfLogInterval S` | performance log period (server default 30 s) |
 | `-defaultSocket` | use the stock Unity Transport socket instead of the ICMP-safe one (diagnostics) |

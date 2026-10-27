@@ -9,11 +9,15 @@
   idle    — bots do nothing: rounds end on the timer
   disconnect — three passive bots; Bot1 is killed mid-round, the match must recover and finish
   reconnect  — like disconnect, then Bot1 rejoins with the same name and must get its team and stats back
+  duel       — Duel mode, two fighting bots
+  deathmatch — Deathmatch, four free-for-all bots, first to 5 kills
+  capture    — Capture the Area, 2v2, first to 25 points
+  weapongame — Weapon Game, four free-for-all bots climb the weapon ladder
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File Tools\autotest-match.ps1 -Scenario passive
 #>
 param(
-    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect', 'reconnect')][string]$Scenario = 'fight',
+    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect', 'reconnect', 'duel', 'deathmatch', 'capture', 'weapongame')][string]$Scenario = 'fight',
     [int]$Bots = 2,
     [int]$Port = 7790,
     [int]$RoundsToWin = 2,
@@ -34,12 +38,21 @@ $serverLog = Join-Path $logs 'server.log'
 $roundTime = switch ($Scenario) { 'idle' { 15 } default { 75 } }
 $fuse = switch ($Scenario) { 'explode' { 4 } default { 25 } }
 $defuse = switch ($Scenario) { 'explode' { 6 } default { 5 } }
-$botMode = switch ($Scenario) { 'fight' { 'fight' } 'idle' { 'idle' } default { 'passive' } }
+$botMode = switch ($Scenario) { 'idle' { 'idle' } { $_ -in 'passive', 'explode', 'disconnect', 'reconnect' } { 'passive' } default { 'fight' } }
+$modeArgs = switch ($Scenario) {
+    'duel' { @('-mode', 'duel', '-roundTime', 45, '-roundsToWin', 3) }
+    'deathmatch' { @('-mode', 'deathmatch', '-roundTime', 180, '-roundsToWin', 5, '-respawnDelay', 2) }
+    'capture' { @('-mode', 'capture', '-roundTime', 180, '-roundsToWin', 25, '-respawnDelay', 3) }
+    'weapongame' { @('-mode', 'weapongame', '-roundTime', 200, '-respawnDelay', 2) }
+    default { @('-roundTime', $roundTime, '-roundsToWin', $RoundsToWin) }
+}
+if ($Scenario -in 'deathmatch', 'capture', 'weapongame' -and $Bots -lt 4) { $Bots = 4 }
+$botArgs = if ($Scenario -eq 'duel') { @('-botSite', 0) } else { @() }
 if ($Scenario -in 'disconnect', 'reconnect' -and $Bots -lt 3) { $Bots = 3 }
 
-$sArgs = @('-port', $Port, '-logFile', $serverLog, '-roundTime', $roundTime, '-preRoundTime', 2, '-postRoundTime', 3,
-    '-plantTime', 3, '-defuseTime', $defuse, '-fuseTime', $fuse, '-roundsToWin', $RoundsToWin,
-    '-quitAfterMatches', 1, '-quitAfter', $TimeoutSeconds)
+$sArgs = @('-port', $Port, '-logFile', $serverLog, '-preRoundTime', 2, '-postRoundTime', 3,
+    '-plantTime', 3, '-defuseTime', $defuse, '-fuseTime', $fuse,
+    '-quitAfterMatches', 1, '-quitAfter', $TimeoutSeconds) + $modeArgs
 Write-Host "[$Scenario] Starting headless dedicated server on UDP $Port"
 $serverProc = Start-Process -FilePath $server -ArgumentList $sArgs -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 4
@@ -47,7 +60,7 @@ Start-Sleep -Seconds 4
 $clients = @()
 for ($i = 1; $i -le $Bots; $i++) {
     $cArgs = @('-batchmode', '-nographics', '-connect', '127.0.0.1', '-port', $Port, '-name', "Bot$i", '-bot', '-botMode', $botMode,
-        '-quitAfter', $TimeoutSeconds, '-logFile', (Join-Path $logs "bot$i.log"))
+        '-quitAfter', $TimeoutSeconds, '-logFile', (Join-Path $logs "bot$i.log")) + $botArgs
     $clients += Start-Process -FilePath $client -ArgumentList $cArgs -PassThru -WindowStyle Hidden
     Start-Sleep -Milliseconds 500
 }
@@ -74,10 +87,11 @@ $log = Get-Content $serverLog
 $events = $log | Where-Object { $_ -match '^\[BH\]\[(Server|Match|Bomb|Kill|Ability|Hosting)\]' }
 $events | ForEach-Object { Write-Host "  $_" }
 
+$ffa = $Scenario -in 'deathmatch', 'weapongame'
 $checks = [ordered]@{
     'Server started'          = '\[BH\]\[Server\] Started'
-    'Players joined Alpha'    = 'joined team Alpha'
-    'Players joined Bravo'    = 'joined team Bravo'
+    'Players joined'          = $(if ($ffa) { 'joined \(free-for-all\)' } else { 'joined team Alpha' })
+    'Second side joined'      = $(if ($ffa) { "Player 'Bot2'.*joined" } else { 'joined team Bravo' })
     'Match started'           = '\[BH\]\[Match\] Match started'
     'Round went live'         = 'Round 1 live'
     'Round ended'             = 'Round \d+ ended'
@@ -88,6 +102,10 @@ switch ($Scenario) {
     'passive' { $checks['Bomb planted'] = 'Bomb planted at site'; $checks['Bomb defused'] = 'Bomb defused' }
     'explode' { $checks['Bomb planted'] = 'Bomb planted at site'; $checks['Bomb exploded'] = 'Bomb exploded' }
     'idle'    { $checks['Timer ended rounds'] = 'Time expired' }
+    'duel'       { $checks['Kills happened'] = '\[BH\]\[Kill\]'; $checks['Duel mode active'] = "Mode 'duel' ready" }
+    'deathmatch' { $checks['Kills happened'] = '\[BH\]\[Kill\]'; $checks['Kill limit or time'] = '5 kills reached|Time expired' }
+    'capture'    { $checks['Area captured'] = 'Area captured by'; $checks['Points or time'] = '25 points reached|Time expired' }
+    'weapongame' { $checks['Ladder advanced'] = 'advanced to level'; $checks['Final weapon or time'] = 'Final weapon kill|Time expired' }
     'reconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Bot1 reconnected with state'] = "Player 'Bot1' reconnected to match" }
     'disconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Round ended after disconnect'] = 'Round \d+ ended' }
 }

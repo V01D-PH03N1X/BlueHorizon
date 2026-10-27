@@ -20,10 +20,12 @@ builds, automated tests. See TESTING.md for what was verified and RISKS.md for w
 - Done: reconnect to a running match.
 - Open: two-machine LAN/WAN playtest, Linux run, human playtest of hit-registration feel.
 
-## Milestone 3 — Additional core modes
+## Milestone 3 — Additional core modes (implemented 2026-10-27, see TESTING)
 
-Duel (1v1), Deathmatch (up to 15 players — requires re-validating server limits), Capture the Area, Weapon Game.
-Each mode = a `GameModeDefinition` asset + a rules class; shared configurable match/scoring.
+- Done: generic match flow in `MatchManager`, pluggable `GameModeRules`; HeavyBomb moved onto it unchanged.
+- Done: Duel, Deathmatch (15 players, validated), Capture the Area, Weapon Game; per-player loadouts.
+- Done: free-for-all spawns and capture zone on Horizon Depot; mode-aware HUD, scoreboard, results and test bots.
+- Open: human playtests of the new modes; balance of capture timings and Weapon Game ladder (only 2 weapons until M4).
 
 ## Milestone 4 — Weapons and attachments
 

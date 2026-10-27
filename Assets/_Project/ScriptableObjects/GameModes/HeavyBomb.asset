@@ -14,20 +14,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.GameModes.HeavyBombSettings
   modeId: heavybomb
   displayName: HeavyBomb
+  description: Attackers plant the bomb at site A or B; defenders stop them or defuse
+    it.
   teamSize: 5
   maxPlayers: 10
   minPlayersPerTeam: 1
+  freeForAll: 0
   friendlyFire: 0
+  abilitiesEnabled: 1
+  loadoutChangesEnabled: 1
   matchStartCountdown: 5
   preRoundTime: 6
-  roundTime: 100
+  timeLimit: 100
   postRoundTime: 6
   matchOverTime: 12
+  respawnDelay: 0
+  scoreLimit: 7
   plantDuration: 4
   defuseDuration: 7
   fuseDuration: 40
   defuseRange: 1.9
   pickupRange: 1.5
   maxInteractSpeed: 0.6
-  roundsToWin: 7
   roundsPerHalf: 6

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 — 2026-10-27 — Milestone 3: additional core modes
+
+### Added
+- Pluggable game modes: generic `MatchManager` flow + `GameModeRules` per mode; selected with `-mode`.
+- Duel (1v1 rounds, timeout by remaining health), Deathmatch (free-for-all, 15 players), Capture the Area
+  (single zone, capture/contest/score), Weapon Game (kill-to-advance weapon ladder).
+- Per-player loadouts (replicated weapon indices), mid-life weapon reset; `GameContent.weapons` and `modes`.
+- 17 free-for-all spawns with farthest-from-enemies selection; capture zone with floor plate and progress posts.
+- Mode-aware HUD (scores, phase text, prompts, announcements), free-for-all scoreboard and results.
+- Test bots for all modes; `duel`, `deathmatch`, `capture`, `weapongame` automated scenarios; `loadtest.ps1 -Mode`.
+- 12 new EditMode tests (97 total).
+
+### Changed
+- Server player limit raised to 16 (the mode caps it); `server.json` default updated.
+- Mode timing fields moved to the shared `GameModeDefinition` (`roundTime` → `timeLimit`, `roundsToWin` → `scoreLimit`,
+  existing asset values migrated with `FormerlySerializedAs`).
+
 ## 0.2.0 — 2026-10-26 — Milestone 2: stability and multiplayer
 
 ### Added

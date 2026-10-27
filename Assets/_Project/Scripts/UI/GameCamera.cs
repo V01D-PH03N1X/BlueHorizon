@@ -32,6 +32,7 @@ namespace BlueHorizon.UI
         Transform _muzzle;
         byte _shownSlot = 255;
         bool _shownSuppressor;
+        WeaponDefinition _shownWeapon;
         float _kick;
         float _spectateSwitchTime;
         int _spectateIndex;
@@ -159,11 +160,13 @@ namespace BlueHorizon.UI
             _viewmodel.gameObject.SetActive(true);
             WeaponSimState w = sim.Weapons;
             bool suppressed = _local.HasSuppressor(w.activeSlot);
-            if (w.activeSlot != _shownSlot || suppressed != _shownSuppressor)
+            WeaponDefinition current = _local.WeaponInSlot(w.activeSlot);
+            if (w.activeSlot != _shownSlot || suppressed != _shownSuppressor || current != _shownWeapon)
             {
                 _shownSlot = w.activeSlot;
                 _shownSuppressor = suppressed;
-                WeaponDefinition def = GameContent.Instance != null ? GameContent.Instance.WeaponForSlot(w.activeSlot) : null;
+                _shownWeapon = current;
+                WeaponDefinition def = current;
                 RebuildModel(def, suppressed);
             }
 

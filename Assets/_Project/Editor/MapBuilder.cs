@@ -231,6 +231,25 @@ namespace BlueHorizon.EditorTools
             Site(markers, 0, "A", new Vector3(-25f, 0f, 20f), new Vector3(20f, 4f, 14f), _siteA, new Color(1f, 0.72f, 0.18f));
             Site(markers, 1, "B", new Vector3(25f, 0f, 18f), new Vector3(20f, 4f, 14f), _siteB, new Color(0.95f, 0.3f, 0.65f));
 
+            // Capture the Area: between the mid pillar and the centre building.
+            var zoneGo = new GameObject("CaptureZone");
+            zoneGo.transform.SetParent(markers, false);
+            zoneGo.transform.position = new Vector3(0f, 0f, 9.5f);
+            var zone = zoneGo.AddComponent<CaptureZone>();
+            zone.size = new Vector3(16f, 4f, 4.5f);
+            Outline(zoneGo.transform, zone.size, _accent);
+
+            // Free-for-all spawns spread over lanes, sites, junction and both spawn areas (Deathmatch, Weapon Game).
+            var free = new (Vector3 p, float yaw)[]
+            {
+                (new Vector3(-30f, 0f, -14f), 0f), (new Vector3(-26f, 0f, 0f), 0f), (new Vector3(30f, 0f, -14f), 0f), (new Vector3(26f, 0f, 0f), 0f),
+                (new Vector3(0f, 0f, -24f), 0f), (new Vector3(-20f, 0f, -45f), 0f), (new Vector3(20f, 0f, -45f), 0f), (new Vector3(0f, 0f, -46f), 0f),
+                (new Vector3(-17f, 0f, 4f), 90f), (new Vector3(16f, 0f, 9f), 270f), (new Vector3(-34f, 0f, 20f), 90f), (new Vector3(34f, 0f, 17f), 270f),
+                (new Vector3(-30f, 0f, 44f), 180f), (new Vector3(30f, 0f, 44f), 180f), (new Vector3(0f, 0f, 46f), 180f),
+                (new Vector3(-22f, 0f, 33f), 180f), (new Vector3(22f, 0f, 33f), 180f),
+            };
+            for (int i = 0; i < free.Length; i++) Spawn(markers, Side.None, free[i].p, free[i].yaw, i);
+
             // Landmarks: giant site letters and lane signage.
             Letter(geometry, 'A', new Vector3(-31f, 1.6f, 30f), 0.45f, _siteA, facingSouth: true);
             Letter(geometry, 'B', new Vector3(31f, 1.6f, 30f), 0.45f, _siteB, facingSouth: true);
@@ -252,6 +271,10 @@ namespace BlueHorizon.EditorTools
             Route(markers, Side.Attack, 1, new Vector3(4f, 0, -42f), new Vector3(31f, 0, -38f), new Vector3(32f, 0, -20f), new Vector3(32f, 0, 6f), new Vector3(17f, 0, 10f), new Vector3(17f, 0, 12.5f));
             Route(markers, Side.Defense, 0, new Vector3(-4f, 0, 44f), new Vector3(-16.5f, 0, 41f), new Vector3(-16.5f, 0, 37.5f), new Vector3(-22f, 0, 37f), new Vector3(-22f, 0, 28f), new Vector3(-17f, 0, 24f));
             Route(markers, Side.Defense, 1, new Vector3(4f, 0, 44f), new Vector3(16.5f, 0, 41f), new Vector3(16.5f, 0, 37.5f), new Vector3(22f, 0, 37f), new Vector3(22f, 0, 28f), new Vector3(17f, 0, 22f));
+            // Routes to the capture zone (BotRoute.siteIndex 2).
+            // Attackers take the mid lane (~52 m) so both teams reach the zone in similar time (defenders ~59 m).
+            Route(markers, Side.Attack, 2, new Vector3(-5f, 0, -42f), new Vector3(-5f, 0, 2f), new Vector3(-4.5f, 0, 9.5f));
+            Route(markers, Side.Defense, 2, new Vector3(4f, 0, 44f), new Vector3(16.5f, 0, 41f), new Vector3(16.5f, 0, 37.5f), new Vector3(22f, 0, 37f), new Vector3(22f, 0, 28f), new Vector3(17f, 0, 22f), new Vector3(16.5f, 0, 13f), new Vector3(5f, 0, 9.5f));
 
             // Overview / spectator camera.
             CreateCamera(new Vector3(0f, 55f, -38f), Quaternion.Euler(58f, 0f, 0f));
@@ -320,7 +343,9 @@ namespace BlueHorizon.EditorTools
         static Mesh BoxMesh(Vector3 size)
         {
             ContentFactory.EnsureFolder(GeneratedMeshes);
-            string key = $"Box_{size.x:0.###}x{size.y:0.###}x{size.z:0.###}".Replace('.', '_');
+            // Invariant formatting keeps asset names identical on every machine regardless of locale.
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string key = $"Box_{size.x.ToString("0.###", inv)}x{size.y.ToString("0.###", inv)}x{size.z.ToString("0.###", inv)}".Replace('.', '_');
             string path = $"{GeneratedMeshes}/{key}.asset";
             var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
             if (existing != null) return existing;
@@ -434,6 +459,16 @@ namespace BlueHorizon.EditorTools
             Object.DestroyImmediate(Block(go.transform, "Edge_S", new Vector3(0f, 0.02f, -hz), new Vector3(size.x, 0.03f, t), material).GetComponent<Collider>());
             Object.DestroyImmediate(Block(go.transform, "Edge_W", new Vector3(-hx, 0.02f, 0f), new Vector3(t, 0.03f, size.z), material).GetComponent<Collider>());
             Object.DestroyImmediate(Block(go.transform, "Edge_E", new Vector3(hx, 0.02f, 0f), new Vector3(t, 0.03f, size.z), material).GetComponent<Collider>());
+        }
+
+        static void Outline(Transform parent, Vector3 size, Material material)
+        {
+            const float t = 0.25f;
+            float hx = size.x * 0.5f, hz = size.z * 0.5f;
+            Object.DestroyImmediate(Block(parent, "Edge_N", new Vector3(0f, 0.02f, hz), new Vector3(size.x, 0.03f, t), material).GetComponent<Collider>());
+            Object.DestroyImmediate(Block(parent, "Edge_S", new Vector3(0f, 0.02f, -hz), new Vector3(size.x, 0.03f, t), material).GetComponent<Collider>());
+            Object.DestroyImmediate(Block(parent, "Edge_W", new Vector3(-hx, 0.02f, 0f), new Vector3(t, 0.03f, size.z), material).GetComponent<Collider>());
+            Object.DestroyImmediate(Block(parent, "Edge_E", new Vector3(hx, 0.02f, 0f), new Vector3(t, 0.03f, size.z), material).GetComponent<Collider>());
         }
 
         static void Route(Transform parent, Side side, int site, params Vector3[] points)

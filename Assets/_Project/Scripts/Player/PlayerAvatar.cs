@@ -37,6 +37,8 @@ namespace BlueHorizon.Player
         public readonly NetworkVariable<int> ObjectiveScore = new();
         /// <summary>Bit per weapon slot: suppressor fitted.</summary>
         public readonly NetworkVariable<byte> SuppressorMask = new();
+        /// <summary>Weapons in each slot (indices into GameContent.weapons), chosen by the game mode.</summary>
+        public readonly NetworkVariable<PlayerLoadout> LoadoutValue = new(PlayerLoadout.Default);
 
         PlayerSimulation _simulation;
         PlayerHealth _health;
@@ -81,6 +83,7 @@ namespace BlueHorizon.Player
             }
             All.Add(this);
             SuppressorMask.OnValueChanged += OnSuppressorChanged;
+            LoadoutValue.OnValueChanged += OnLoadoutChanged;
             AliveValue.OnValueChanged += OnAliveChanged;
             RecomputeStats();
             ApplyAliveState(AliveValue.Value);
@@ -97,12 +100,19 @@ namespace BlueHorizon.Player
         {
             All.Remove(this);
             SuppressorMask.OnValueChanged -= OnSuppressorChanged;
+            LoadoutValue.OnValueChanged -= OnLoadoutChanged;
             AliveValue.OnValueChanged -= OnAliveChanged;
             if (Local == this) Local = null;
             AnyDespawned?.Invoke(this);
         }
 
         void OnSuppressorChanged(byte previous, byte current)
+        {
+            RecomputeStats();
+            LoadoutChanged?.Invoke();
+        }
+
+        void OnLoadoutChanged(PlayerLoadout previous, PlayerLoadout current)
         {
             RecomputeStats();
             LoadoutChanged?.Invoke();
@@ -123,8 +133,15 @@ namespace BlueHorizon.Player
         {
             GameContent content = GameContent.Instance;
             if (content == null) return;
-            _primary = ComputeStats(content.primaryWeapon, 0, content);
-            _secondary = ComputeStats(content.secondaryWeapon, 1, content);
+            _primary = ComputeStats(WeaponInSlot(0), 0, content);
+            _secondary = ComputeStats(WeaponInSlot(1), 1, content);
+        }
+
+        /// <summary>Weapon carried in a slot, or null if the slot is empty in this mode.</summary>
+        public WeaponDefinition WeaponInSlot(int slot)
+        {
+            GameContent content = GameContent.Instance;
+            return content != null ? content.WeaponByIndex(LoadoutValue.Value.Slot(slot)) : null;
         }
 
         WeaponStats ComputeStats(WeaponDefinition weapon, int slot, GameContent content)
@@ -181,6 +198,18 @@ namespace BlueHorizon.Player
 
         public void ServerAddObjectiveScore(int amount) => ObjectiveScore.Value += amount;
 
+        public void ServerSetObjectiveScore(int value) => ObjectiveScore.Value = value;
+
+        /// <summary>Server: set the carried weapons (and optionally suppressors). Weapons are reset by the caller.</summary>
+        public void ServerSetLoadout(PlayerLoadout loadout)
+        {
+            byte suppressors = loadout.suppressorMask;
+            loadout.suppressorMask = PlayerLoadout.KeepSuppressors;
+            LoadoutValue.Value = loadout;
+            if (suppressors != PlayerLoadout.KeepSuppressors) SuppressorMask.Value = suppressors;
+            RecomputeStats();
+        }
+
         /// <summary>Server: restore scoreboard and loadout after a reconnect.</summary>
         public void ServerRestoreStats(int kills, int deaths, int objectiveScore, byte suppressorMask)
         {
@@ -205,7 +234,9 @@ namespace BlueHorizon.Player
             DeathTime = NetworkManager.ServerTime.Time;
             Deaths.Value++;
 
-            if (info.attackerClientId != OwnerClientId && TryGet(info.attackerClientId, out PlayerAvatar killer) && killer.Team != Team)
+            bool freeForAll = Match.MatchManager.Instance != null && Match.MatchManager.Instance.FreeForAll;
+            if (info.attackerClientId != OwnerClientId && TryGet(info.attackerClientId, out PlayerAvatar killer)
+                && GameModes.TeamRules.AreEnemies(killer.Team, Team, freeForAll))
                 killer.Kills.Value++;
 
             ServerKilled?.Invoke(this, info);

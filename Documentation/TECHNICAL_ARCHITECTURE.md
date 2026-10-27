@@ -87,6 +87,34 @@ bumping mispredicts slightly (visible as corrections in crowded load tests and u
   300 ms cap compensates only partially, by design, to bound "shot behind cover" effects for the victim.
   `-noLagComp` disables it for comparison.
 
+### Game modes
+
+`MatchManager` owns everything that is the same in every mode: joins and team assignment (or free-for-all),
+spawn selection (team spawns by side; free-for-all spawns farthest from living players), warmup / countdown /
+freeze / live / post-round / match-over phases, respawn timers, team and player scores, results, reconnect records
+and the kill feed. A mode is a `GameModeDefinition` asset plus a server-only `GameModeRules` object it creates:
+
+| Hook | Used by |
+|---|---|
+| `RoundBased` | HeavyBomb, Duel (true); others run one live phase |
+| `OnRoundStarting` (set sides) / `OnRoundStarted` / `OnLive` | HeavyBomb bomb carrier, Duel spawn alternation, alive counts |
+| `TickLive(now, dt, timeExpired)` → `ModeOutcome` (continue / round over / match over) | every mode |
+| `OnPlayerKilled` / `OnPlayerLeft` | kill scoring, weapon ladder, bomb drop |
+| `LoadoutFor(player)` | Weapon Game ladder |
+
+Modes talk back through `IMatchHost` (team score, bomb/zone state publishing, loadout refresh). Pure rule helpers
+(`HeavyBombRules`, `DuelRules`, `FreeForAllRules`, `ZoneModel`, `WeaponGameRules`, `TeamRules`, `SpawnSelector`) are
+unit-tested. Hostility is decided by `TeamRules.AreEnemies` (free-for-all: everyone; team modes: the other team) and is
+used for kill credit, bot targeting and spawn safety; friendly fire uses the existing team check (free-for-all players
+have no team, so all damage applies).
+
+Loadouts are per player: `PlayerAvatar.LoadoutValue` (weapon indices into `GameContent.weapons`) plus the suppressor
+mask, replicated so every peer computes identical weapon stats. A mid-life loadout change resets weapons through the
+reliable teleport path without moving the player or changing their view.
+
+Replicated match state: mode index, phase and end time, round number, team scores, attacking team, last round
+winner and reason text, match winner (team and name), bomb state, zone state (`ModeStatus`), score and time limits.
+
 ### Health, abilities, objective, match
 
 | Module | Authority | Replication |

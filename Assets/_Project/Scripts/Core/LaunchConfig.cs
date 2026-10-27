@@ -29,7 +29,9 @@ namespace BlueHorizon.Core
         public string listenAddress = "0.0.0.0";
         public ushort port = DefaultPort;
         public string playerName = "";
-        public int maxPlayers = 10;
+        public int maxPlayers = 16;
+        /// <summary>Game mode id (heavybomb, duel, deathmatch, capture, weapongame). The mode also caps the player count.</summary>
+        public string mode = "heavybomb";
 
         /// <summary>Run the scripted test bot instead of keyboard/mouse input (automated multiplayer tests).</summary>
         public bool bot;
@@ -75,6 +77,7 @@ namespace BlueHorizon.Core
         public float fuseTime = -1f;
         public int roundsToWin = -1;
         public int minPlayersPerTeam = -1;
+        public float respawnDelay = -1f;
 
         static LaunchConfig _current;
 
@@ -118,7 +121,9 @@ namespace BlueHorizon.Core
             config.listenAddress = args.GetString("listen", config.listenAddress);
             config.port = (ushort)Mathf.Clamp(args.GetInt("port", config.port), 1, 65535);
             config.playerName = args.GetString("name", config.playerName);
-            config.maxPlayers = Mathf.Clamp(args.GetInt("maxPlayers", config.maxPlayers), 1, 10);
+            config.maxPlayers = Mathf.Clamp(args.GetInt("maxPlayers", config.maxPlayers), 1, 16);
+            config.mode = args.GetString("mode", config.mode).ToLowerInvariant();
+            config.respawnDelay = args.GetFloat("respawnDelay", config.respawnDelay);
             config.bot |= args.Has("bot");
             config.botMode = args.GetString("botMode", config.botMode).ToLowerInvariant();
             config.botSite = args.GetInt("botSite", config.botSite);
@@ -133,13 +138,13 @@ namespace BlueHorizon.Core
             config.simLatencyMs = Mathf.Max(0, args.GetInt("simLatency", config.simLatencyMs));
             config.simJitterMs = Mathf.Max(0, args.GetInt("simJitter", config.simJitterMs));
             config.simLossPercent = Mathf.Clamp(args.GetFloat("simLoss", config.simLossPercent), 0f, 100f);
-            config.roundTime = args.GetFloat("roundTime", config.roundTime);
+            config.roundTime = args.GetFloat("roundTime", args.GetFloat("timeLimit", config.roundTime));
             config.preRoundTime = args.GetFloat("preRoundTime", config.preRoundTime);
             config.postRoundTime = args.GetFloat("postRoundTime", config.postRoundTime);
             config.plantTime = args.GetFloat("plantTime", config.plantTime);
             config.defuseTime = args.GetFloat("defuseTime", config.defuseTime);
             config.fuseTime = args.GetFloat("fuseTime", config.fuseTime);
-            config.roundsToWin = args.GetInt("roundsToWin", config.roundsToWin);
+            config.roundsToWin = args.GetInt("roundsToWin", args.GetInt("scoreLimit", config.roundsToWin));
             config.minPlayersPerTeam = args.GetInt("minPlayersPerTeam", config.minPlayersPerTeam);
             return config;
         }
