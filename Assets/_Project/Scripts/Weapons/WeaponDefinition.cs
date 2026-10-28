@@ -1,4 +1,5 @@
 using System;
+using BlueHorizon.Attachments;
 using UnityEngine;
 
 namespace BlueHorizon.Weapons
@@ -13,6 +14,16 @@ namespace BlueHorizon.Weapons
     {
         Primary = 0,
         Secondary = 1,
+    }
+
+    public enum WeaponCategory : byte
+    {
+        AssaultRifle,
+        Pistol,
+        Revolver,
+        Shotgun,
+        PrecisionRifle,
+        SniperRifle,
     }
 
     [Serializable]
@@ -73,6 +84,7 @@ namespace BlueHorizon.Weapons
         public string weaponId = "weapon";
         public string displayName = "Weapon";
         public WeaponSlot slot = WeaponSlot.Primary;
+        public WeaponCategory category = WeaponCategory.AssaultRifle;
         public FireMode fireMode = FireMode.SemiAutomatic;
 
         [Header("Cadence & Ammo")]
@@ -87,6 +99,10 @@ namespace BlueHorizon.Weapons
         public ZoneDamage damage = new() { head = 100, torso = 40, legs = 20 };
         public RangeFalloff falloff = new() { falloffStart = 1000f, falloffEnd = 1000f, minMultiplier = 1f };
         public float maxRange = 150f;
+        [Tooltip("Projectiles per shot (shotgun). Damage values are per pellet.")]
+        public int pellets = 1;
+        [Tooltip("Cone half-angle, degrees, in which pellets scatter around the shot direction.")]
+        public float pelletSpread;
 
         [Header("Accuracy")]
         public SpreadSettings spread = new()
@@ -101,6 +117,23 @@ namespace BlueHorizon.Weapons
         };
         [Tooltip("Firing is blocked while sprinting.")]
         public bool blockFireWhileSprinting = true;
+
+        [Header("Aim down sights")]
+        public bool canAim = true;
+        [Tooltip("Seconds from hip to fully aimed.")]
+        public float adsTime = 0.2f;
+        [Tooltip("Spread multiplier when fully aimed (hip = 1).")]
+        public float adsSpreadMultiplier = 0.5f;
+        [Tooltip("Movement speed multiplier while aiming.")]
+        public float adsMoveSpeedMultiplier = 0.75f;
+        [Tooltip("Field-of-view multiplier with iron sights (optics override it).")]
+        public float adsFovMultiplier = 0.9f;
+
+        [Header("Attachments")]
+        [Tooltip("Attachments a player may fit to this weapon.")]
+        public AttachmentDefinition[] allowedAttachments = System.Array.Empty<AttachmentDefinition>();
+        [Tooltip("Built-in optic that is always fitted (e.g. sniper scope).")]
+        public AttachmentDefinition fixedOptic;
 
         [Header("Presentation")]
         public Color viewmodelColor = new(0.2f, 0.22f, 0.25f);

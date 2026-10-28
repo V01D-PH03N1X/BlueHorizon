@@ -24,6 +24,8 @@ namespace BlueHorizon.Movement
     public struct MotorContext
     {
         public bool canMove;
+        /// <summary>Speed multiplier (aiming down sights); 0 is treated as 1.</summary>
+        public float speedMultiplier;
     }
 
     /// <summary>
@@ -52,7 +54,7 @@ namespace BlueHorizon.Movement
         public static float EyeHeight(MovementSettings m, float crouch) => Mathf.Lerp(m.standingEyeHeight, m.crouchEyeHeight, crouch);
 
         public static bool IsSprinting(in PlayerInputCommand cmd, in MotorState state) =>
-            cmd.Has(InputButtons.Sprint) && cmd.moveY > 40 && state.crouch < 0.5f && state.grounded;
+            cmd.Has(InputButtons.Sprint) && !cmd.Has(InputButtons.Aim) && cmd.moveY > 40 && state.crouch < 0.5f && state.grounded;
 
         public static void ApplyShape(CharacterController cc, MovementSettings m, float crouch)
         {
@@ -82,6 +84,7 @@ namespace BlueHorizon.Movement
             float speed = s.crouch > 0.5f ? m.crouchSpeed
                 : IsSprinting(cmd, s) ? m.sprintSpeed
                 : m.runSpeed;
+            if (ctx.speedMultiplier > 0f) speed *= ctx.speedMultiplier;
             Vector3 targetVelocity = wish * speed;
 
             Vector3 horizontal = new(s.velocity.x, 0f, s.velocity.z);

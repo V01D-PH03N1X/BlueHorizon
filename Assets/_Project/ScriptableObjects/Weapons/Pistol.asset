@@ -15,6 +15,7 @@ MonoBehaviour:
   weaponId: pistol
   displayName: Pistol
   slot: 1
+  category: 1
   fireMode: 0
   fireRate: 1.6
   magazineSize: 12
@@ -30,6 +31,8 @@ MonoBehaviour:
     falloffEnd: 1000
     minMultiplier: 1
   maxRange: 120
+  pellets: 1
+  pelletSpread: 0
   spread:
     baseSpread: 0.25
     movingSpread: 1.6
@@ -44,6 +47,16 @@ MonoBehaviour:
     resetTime: 0.5
     recoveryRate: 12
   blockFireWhileSprinting: 1
+  canAim: 1
+  adsTime: 0.2
+  adsSpreadMultiplier: 0.5
+  adsMoveSpeedMultiplier: 0.75
+  adsFovMultiplier: 0.9
+  allowedAttachments:
+  - {fileID: 11400000, guid: b016e78789bbcbc4c8bb915bee87e178, type: 2}
+  - {fileID: 11400000, guid: c4dea6a85765da94caec451b602619b4, type: 2}
+  - {fileID: 11400000, guid: 5e5486a4d777ac74093a224c07de4f90, type: 2}
+  fixedOptic: {fileID: 0}
   viewmodelColor: {r: 0.2, g: 0.2, b: 0.22, a: 1}
   viewmodelSize: {x: 0.05, y: 0.12, z: 0.22}
   fireSoundPitch: 1

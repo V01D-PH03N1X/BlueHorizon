@@ -71,7 +71,8 @@ namespace BlueHorizon.GameModes
 
         public bool FreeForAll => Definition.freeForAll;
 
-        public virtual PlayerLoadout LoadoutFor(PlayerAvatar avatar) => PlayerLoadout.Default;
+        /// <summary>Weapons and attachments for a spawn. Default: the player's own (validated) choice.</summary>
+        public virtual PlayerLoadout LoadoutFor(PlayerAvatar avatar) => avatar.PreferredLoadout;
 
         public virtual void OnMatchStart() { }
 

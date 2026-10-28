@@ -33,8 +33,16 @@ MonoBehaviour:
   ladder:
   - weaponIndex: 0
     suppressed: 0
+  - weaponIndex: 3
+    suppressed: 0
+  - weaponIndex: 4
+    suppressed: 0
+  - weaponIndex: 5
+    suppressed: 0
   - weaponIndex: 0
     suppressed: 1
+  - weaponIndex: 2
+    suppressed: 0
   - weaponIndex: 1
     suppressed: 0
   - weaponIndex: 1

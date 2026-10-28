@@ -19,6 +19,8 @@ namespace BlueHorizon.Weapons
         public float recoilPitch;
         public float recoilYaw;
         public bool triggerWasHeld;
+        /// <summary>0 = hip, 1 = fully aimed down sights.</summary>
+        public float adsProgress;
 
         public short Magazine(int slot) => slot == 0 ? magazine0 : magazine1;
         public short Reserve(int slot) => slot == 0 ? reserve0 : reserve1;
@@ -50,6 +52,7 @@ namespace BlueHorizon.Weapons
             serializer.SerializeValue(ref recoilPitch);
             serializer.SerializeValue(ref recoilYaw);
             serializer.SerializeValue(ref triggerWasHeld);
+            serializer.SerializeValue(ref adsProgress);
         }
     }
 
@@ -67,8 +70,13 @@ namespace BlueHorizon.Weapons
     {
         public bool fired;
         public byte slot;
+        /// <summary>Direction of the first pellet (the only one for most weapons).</summary>
         public Vector3 direction;
         public float spreadAngle;
+        /// <summary>Deterministic seed (command sequence) shared by prediction and server.</summary>
+        public uint seed;
+        public byte pellets;
+        public float pelletSpread;
     }
 
     /// <summary>
@@ -114,6 +122,11 @@ namespace BlueHorizon.Weapons
             int slot = s.activeSlot;
             bool equipping = simTime < s.equipEndTime;
 
+            // Aim down sights: progress towards 1 while held (not while sprinting, reloading or equipping).
+            bool aiming = cmd.Has(InputButtons.Aim) && def.canAim && !equipping && !s.IsReloading && !ctx.sprinting;
+            float adsStep = dt / Mathf.Max(0.01f, stats.AdsTime);
+            s.adsProgress = Mathf.Clamp01(s.adsProgress + (aiming ? adsStep : -adsStep * 1.5f));
+
             // Reload completion.
             if (s.IsReloading && simTime >= s.reloadEndTime)
             {
@@ -154,11 +167,20 @@ namespace BlueHorizon.Weapons
                 s.nextFireTime = simTime - s.nextFireTime < dt ? s.nextFireTime + interval : simTime + interval;
                 s.SetMagazine(slot, (short)(s.Magazine(slot) - 1));
 
-                float spread = SpreadAngle(def, stats, s.sprayCount, ctx);
+                float spread = SpreadAngle(def, stats, s.sprayCount, ctx, s.adsProgress);
                 Quaternion view = ViewRotation(cmd.yaw + s.recoilYaw, cmd.pitch + s.recoilPitch);
                 Vector3 dir = ApplySpread(view, spread, cmd.sequence);
 
-                shot = new ShotEvent { fired = true, slot = (byte)slot, direction = dir, spreadAngle = spread };
+                shot = new ShotEvent
+                {
+                    fired = true,
+                    slot = (byte)slot,
+                    direction = dir,
+                    spreadAngle = spread,
+                    seed = cmd.sequence,
+                    pellets = (byte)Mathf.Clamp(def.pellets, 1, 32),
+                    pelletSpread = def.pelletSpread,
+                };
 
                 // Recoil applies to the next shot and to the camera.
                 float recoilScale = stats.RecoilMultiplier;
@@ -178,7 +200,7 @@ namespace BlueHorizon.Weapons
         public static WeaponStats Get(int slot, in WeaponStats primary, in WeaponStats secondary) =>
             slot == 0 ? primary : secondary;
 
-        public static float SpreadAngle(WeaponDefinition def, in WeaponStats stats, int sprayCount, in WeaponContext ctx)
+        public static float SpreadAngle(WeaponDefinition def, in WeaponStats stats, int sprayCount, in WeaponContext ctx, float adsProgress = 0f)
         {
             SpreadSettings sp = def.spread;
             float angle = sp.baseSpread
@@ -186,7 +208,16 @@ namespace BlueHorizon.Weapons
                           + (ctx.grounded ? 0f : sp.airborneSpread)
                           + Mathf.Min(sp.bloomPerShot * sprayCount, sp.maxBloom);
             if (ctx.crouched) angle *= sp.crouchMultiplier;
-            return angle * stats.SpreadMultiplier;
+            float aimMultiplier = Mathf.Lerp(stats.HipSpreadMultiplier, stats.AdsSpreadMultiplier, Mathf.Clamp01(adsProgress));
+            return angle * stats.SpreadMultiplier * aimMultiplier;
+        }
+
+        /// <summary>Direction of pellet <paramref name="index"/> of a shot; pellet 0 is the aimed direction.</summary>
+        public static Vector3 PelletDirection(in ShotEvent shot, int index)
+        {
+            if (index == 0 || shot.pelletSpread <= 0f) return shot.direction;
+            Quaternion around = Quaternion.LookRotation(shot.direction);
+            return ApplySpread(around, shot.pelletSpread, shot.seed * 2654435761u + (uint)index * 40503u);
         }
 
         /// <summary>Pitch is positive upwards.</summary>

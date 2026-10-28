@@ -307,7 +307,9 @@ namespace BlueHorizon.Player
 
             if (alive && _cc.enabled)
             {
-                var motorCtx = new MotorContext { canMove = canMove };
+                WeaponStats active = _avatar.StatsForSlot(_weapons.activeSlot);
+                float aimSpeed = cmd.Has(InputButtons.Aim) && active.Definition != null ? active.AdsMoveSpeedMultiplier : 1f;
+                var motorCtx = new MotorContext { canMove = canMove, speedMultiplier = aimSpeed };
                 PlayerMotor.Step(ref _motor, cmd, dt, Movement, _cc, motorCtx);
             }
 
@@ -442,8 +444,8 @@ namespace BlueHorizon.Player
                 MatchManager match = MatchManager.Instance;
                 if (match == null || match.LoadoutChangesAllowed)
                 {
-                    _avatar.ServerToggleSuppressor(_weapons.activeSlot);
-                    BHLog.Info("Loadout", $"{_avatar.PlayerName} suppressor on slot {_weapons.activeSlot}: {_avatar.HasSuppressor(_weapons.activeSlot)}");
+                    if (_avatar.ServerToggleSuppressor(_weapons.activeSlot))
+                        BHLog.Info("Loadout", $"{_avatar.PlayerName} suppressor on slot {_weapons.activeSlot}: {_avatar.HasSuppressor(_weapons.activeSlot)}");
                 }
             }
         }

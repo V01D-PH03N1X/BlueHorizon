@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using BlueHorizon.Core;
 using BlueHorizon.Player;
@@ -29,66 +30,81 @@ namespace BlueHorizon.Combat
         /// <summary>Server: raised for every resolved shot (shooter, target or null, damage, killed).</summary>
         public static event Action<PlayerAvatar, IDamageable, int, bool> ServerShotResolved;
 
+        struct PelletHit
+        {
+            public IDamageable target;
+            public HitboxCollider hitbox;
+            public float distance;
+            public Vector3 point;
+        }
+
+        static readonly List<PelletHit> PelletHits = new(32);
+        static readonly List<IDamageable> Targets = new(8);
+
         public static void ServerResolveShot(PlayerAvatar shooter, Vector3 origin, in ShotEvent shot, double viewTime, double now)
         {
             WeaponStats stats = shooter.StatsForSlot(shot.slot);
             WeaponDefinition weapon = stats.Definition;
             if (weapon == null) return;
 
+            // One rewind for all pellets of the shot.
             bool rewind = LagCompensationEnabled && viewTime < now;
             if (rewind) RewindOthers(shooter, viewTime);
             else Physics.SyncTransforms();
 
-            int count = Physics.RaycastNonAlloc(origin, shot.direction, Hits, weapon.maxRange, GameLayers.ShotMask, QueryTriggerInteraction.Collide);
+            PelletHits.Clear();
+            Vector3 firstEnd = origin + shot.direction * weapon.maxRange;
+            int pellets = Mathf.Max(1, shot.pellets);
+            for (int p = 0; p < pellets; p++)
+            {
+                Vector3 dir = WeaponSimulation.PelletDirection(shot, p);
+                Vector3 end = TracePellet(shooter, origin, dir, weapon.maxRange, out PelletHit hit);
+                if (p == 0) firstEnd = end;
+                if (hit.target != null) PelletHits.Add(hit);
+            }
             if (rewind) RestoreOthers(shooter);
-            Array.Sort(Hits, 0, count, Comparer.Instance);
             ShotsResolved++;
             RewindSecondsTotal += now - viewTime;
 
-            Vector3 end = origin + shot.direction * weapon.maxRange;
-            IDamageable target = null;
-            int applied = 0;
-            bool killed = false;
-            bool hitCharacter = false;
+            // Aggregate pellets per target: one damage event per target per shot.
+            Targets.Clear();
+            foreach (PelletHit h in PelletHits)
+                if (!Targets.Contains(h.target)) Targets.Add(h.target);
 
-            for (int i = 0; i < count; i++)
+            IDamageable lastTarget = null;
+            int lastApplied = 0;
+            bool lastKilled = false, hitCharacter = false;
+            foreach (IDamageable target in Targets)
             {
-                RaycastHit hit = Hits[i];
-                var hitbox = hit.collider.GetComponent<HitboxCollider>();
-                if (hitbox == null)
+                int total = 0;
+                HitZone zone = HitZone.Legs;
+                Vector3 point = default;
+                foreach (PelletHit h in PelletHits)
                 {
-                    if (hit.collider.isTrigger) continue; // Non-hitbox triggers never stop bullets.
-                    end = hit.point;
-                    break;
+                    if (h.target != target) continue;
+                    total += DamageResolver.Compute(stats, h.hitbox.zone, h.distance);
+                    if (ZonePriority(h.hitbox.zone) >= ZonePriority(zone)) { zone = h.hitbox.zone; point = h.point; }
                 }
+                if (!target.CanTakeDamage) continue;
 
-                IDamageable candidate = hitbox.Target;
-                if (candidate == null) continue;
-                if (ReferenceEquals(candidate, shooter.Health)) continue; // Own hitboxes.
-                if (!candidate.CanTakeDamage) continue;
-
-                end = hit.point;
-                if (!FriendlyFire && candidate.DamageTeam == shooter.Team && candidate.DamageTeam != Team.None)
-                    break; // Teammates stop the bullet but take no damage.
-
-                target = candidate;
-                hitCharacter = candidate is Health.PlayerHealth;
-                int damage = DamageResolver.Compute(stats, hitbox.zone, hit.distance);
+                bool character = target is Health.PlayerHealth;
                 var info = new DamageInfo
                 {
                     attackerClientId = shooter.OwnerClientId,
                     attackerTeam = shooter.Team,
-                    amount = damage,
-                    zone = hitbox.zone,
+                    amount = total,
+                    zone = zone,
                     source = DamageSource.Weapon,
                     weaponSlot = shot.slot,
                     origin = origin,
-                    point = hit.point,
+                    point = point,
                 };
-                applied = candidate.ServerApplyDamage(info, out killed);
-                if (applied > 0)
-                    shooter.HitConfirmRpc(hitbox.zone, applied, killed, !hitCharacter);
-                break;
+                int applied = target.ServerApplyDamage(info, out bool killed);
+                if (applied > 0) shooter.HitConfirmRpc(zone, applied, killed, !character);
+                hitCharacter |= character;
+                lastTarget = target;
+                lastApplied = applied;
+                lastKilled = killed;
             }
 
             if (hitCharacter)
@@ -97,8 +113,39 @@ namespace BlueHorizon.Combat
                 shooter.ServerCharacterHits++;
             }
             shooter.ServerShotsFired++;
-            shooter.Simulation.ServerBroadcastShot(origin, end, shot.slot, stats.Suppressed, hitCharacter);
-            ServerShotResolved?.Invoke(shooter, target, applied, killed);
+            shooter.Simulation.ServerBroadcastShot(origin, firstEnd, shot.slot, stats.Suppressed, hitCharacter);
+            ServerShotResolved?.Invoke(shooter, lastTarget, lastApplied, lastKilled);
+        }
+
+        static int ZonePriority(HitZone zone) => zone switch { HitZone.Head => 2, HitZone.Torso => 1, _ => 0 };
+
+        /// <summary>Returns where the pellet stopped; <paramref name="hit"/> holds the damageable it hit, if any.</summary>
+        static Vector3 TracePellet(PlayerAvatar shooter, Vector3 origin, Vector3 direction, float range, out PelletHit hit)
+        {
+            hit = default;
+            int count = Physics.RaycastNonAlloc(origin, direction, Hits, range, GameLayers.ShotMask, QueryTriggerInteraction.Collide);
+            Array.Sort(Hits, 0, count, Comparer.Instance);
+            for (int i = 0; i < count; i++)
+            {
+                RaycastHit h = Hits[i];
+                var hitbox = h.collider.GetComponent<HitboxCollider>();
+                if (hitbox == null)
+                {
+                    if (h.collider.isTrigger) continue; // Non-hitbox triggers never stop bullets.
+                    return h.point;
+                }
+
+                IDamageable candidate = hitbox.Target;
+                if (candidate == null) continue;
+                if (ReferenceEquals(candidate, shooter.Health)) continue; // Own hitboxes.
+                if (!candidate.CanTakeDamage) continue;
+                if (!FriendlyFire && candidate.DamageTeam == shooter.Team && candidate.DamageTeam != Team.None)
+                    return h.point; // Teammates stop the bullet but take no damage.
+
+                hit = new PelletHit { target = candidate, hitbox = hitbox, distance = h.distance, point = h.point };
+                return h.point;
+            }
+            return origin + direction * range;
         }
 
         static void RewindOthers(PlayerAvatar shooter, double viewTime)

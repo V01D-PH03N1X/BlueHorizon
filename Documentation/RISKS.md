@@ -21,7 +21,10 @@ Status as of 2026-10-26 (vertical slice, milestone 1).
 | L-13 | The managed ICMP-safe socket allocates per packet (~1 gen-0 GC/s at 10 players). | Negligible at 10 players (heap ~3 MB). | Pool endpoints / use `SocketAddress` APIs before scaling up. |
 | L-14 | Scenes are generated; hand edits are overwritten by the generator. | Level designers must edit `MapBuilder.cs` (or stop regenerating the map). | Convert the map to an authored scene when art production starts. |
 | L-15 | The pause menu does not pause the match (online game, by design). | — | — |
-| L-17 | Weapon Game ladder has only 4 levels from 2 weapons. | Short matches. | Grows with Milestone 4 weapons (data only). |
+| L-17 | Milestone 4 weapon and attachment values are a proposal checked only by unit tests and bots. | Balance (shotgun range, sniper one-shot torso 150 vs. 175 effective HP, laser trade-off) is unknown. | Human playtests; per-weapon kill statistics. |
+| L-20 | Remote clients draw a shotgun's extra pellet tracers as a random cone (only the first pellet's end point is replicated). | Spectators see approximate pellet impacts; hits and damage are exact (server). | Replicate the seed if it matters. |
+| L-21 | The saved loadout is stored in PlayerPrefs per Windows user, so several clients started on one PC share it. | Local multi-client tests only. | Per-profile storage with accounts. |
+| L-22 | The laser beam is visible to all clients and the scope is a screen overlay; there is no scope glint or other counter-play cue yet. | — | Design pass with playtests. |
 | L-18 | One map for all modes; Capture zone is closer in route length to Bravo (~59 m) than Alpha (~52 m) by design of the existing layout, Deathmatch spawns are fixed points. | Possible side bias; spawn kills in crowded FFA. | Dedicated layouts per mode when more maps exist; measure win rates. |
 | L-19 | Test bots do not step into a contested zone (they fight from outside), so the contested path is verified by unit tests only. | — | Human playtests. |
 | L-16 | Reconnect identity is the display name (no accounts). | Someone joining with a disconnected player's name within 180 s inherits their team and stats. | Accounts/session tokens (Milestone 7). |

@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27967e29c3b99ed49a952c9caaeeb6fd, type: 3}
+  m_Name: Shotgun
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.Weapons.WeaponDefinition
+  weaponId: shotgun
+  displayName: Shotgun
+  slot: 0
+  category: 3
+  fireMode: 0
+  fireRate: 1.1
+  magazineSize: 6
+  reserveAmmo: 24
+  reloadTime: 2.8
+  equipTime: 0.6
+  damage:
+    head: 30
+    torso: 20
+    legs: 12
+  falloff:
+    falloffStart: 8
+    falloffEnd: 25
+    minMultiplier: 0.25
+  maxRange: 60
+  pellets: 8
+  pelletSpread: 4.5
+  spread:
+    baseSpread: 0.5
+    movingSpread: 1
+    airborneSpread: 3
+    bloomPerShot: 0
+    maxBloom: 0
+    crouchMultiplier: 1
+  recoil:
+    verticalPerShot: 3.5
+    maxVertical: 7
+    horizontalAmplitude: 0.5
+    resetTime: 0.8
+    recoveryRate: 10
+  blockFireWhileSprinting: 1
+  canAim: 1
+  adsTime: 0.22
+  adsSpreadMultiplier: 0.8
+  adsMoveSpeedMultiplier: 0.8
+  adsFovMultiplier: 0.92
+  allowedAttachments:
+  - {fileID: 11400000, guid: c4dea6a85765da94caec451b602619b4, type: 2}
+  - {fileID: 11400000, guid: 5e5486a4d777ac74093a224c07de4f90, type: 2}
+  - {fileID: 11400000, guid: f19b753b9d7896c43aae763a970dab21, type: 2}
+  fixedOptic: {fileID: 0}
+  viewmodelColor: {r: 0.24, g: 0.2, b: 0.16, a: 1}
+  viewmodelSize: {x: 0.07, y: 0.1, z: 0.5}
+  fireSoundPitch: 0.6
+  fireSoundVolume: 1.3

@@ -279,7 +279,7 @@ namespace BlueHorizon.Match
                 : $"Player '{playerName}' (client {clientId}) joined team {team}");
             if (rejoining)
             {
-                avatar.ServerRestoreStats(previous.kills, previous.deaths, previous.objectiveScore, previous.suppressorMask);
+                avatar.ServerRestoreStats(previous.kills, previous.deaths, previous.objectiveScore, previous.preferredLoadout);
                 BHLog.Info("Match", $"Player '{playerName}' reconnected to match {_matchId}; team and stats restored");
             }
 
@@ -301,7 +301,7 @@ namespace BlueHorizon.Match
                     kills = avatar.Kills.Value,
                     deaths = avatar.Deaths.Value,
                     objectiveScore = avatar.ObjectiveScore.Value,
-                    suppressorMask = avatar.SuppressorMask.Value,
+                    preferredLoadout = avatar.PreferredLoadout,
                     matchId = _matchId,
                     disconnectTime = NetworkManager.ServerTime.Time,
                 });

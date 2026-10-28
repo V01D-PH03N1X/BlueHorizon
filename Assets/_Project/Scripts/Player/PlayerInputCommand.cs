@@ -20,6 +20,7 @@ namespace BlueHorizon.Player
         Weapon1 = 1 << 9,
         Weapon2 = 1 << 10,
         ToggleAttachment = 1 << 11,
+        Aim = 1 << 12,
     }
 
     /// <summary>
@@ -62,7 +63,7 @@ namespace BlueHorizon.Player
             pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
             if (moveX == sbyte.MinValue) moveX = -127;
             if (moveY == sbyte.MinValue) moveY = -127;
-            buttons &= (InputButtons)0x0FFF;
+            buttons &= (InputButtons)0x1FFF;
         }
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter

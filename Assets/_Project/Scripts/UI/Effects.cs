@@ -10,7 +10,7 @@ namespace BlueHorizon.UI
     /// </summary>
     public sealed class Effects : MonoBehaviour
     {
-        const int TracerPool = 32;
+        const int TracerPool = 64;
         const int FlashPool = 12;
         const int ImpactPool = 24;
 

@@ -77,6 +77,23 @@ bumping mispredicts slightly (visible as corrections in crowded load tests and u
   or damage. The first valid hitbox stops the shot; own hitboxes are skipped; teammates block without damage.
 - The shooter gets `HitConfirmRpc` (hit marker / headshot / kill); other clients get `ShotFxRpc` (tracer, sound,
   impact). The owner's own tracer is drawn from a visual-only raycast.
+- **Pellets (shotgun).** A shot carries a seed (the command sequence) and the pellet count; `WeaponSimulation.PelletDirection`
+  derives every pellet's direction deterministically, so prediction and server agree. The server traces all pellets
+  inside **one** hitbox rewind, sums the damage per target and applies it as one damage event (zone reported: best of
+  head > torso > legs), with one hit confirm. Remote clients receive only the first pellet's end point and draw the
+  others as an approximate cone.
+- **Aim down sights.** `WeaponSimState.adsProgress` (0..1) is predicted state like ammo: it rises while `Aim` is held
+  (not while sprinting, reloading or switching) at `1 / WeaponStats.AdsTime` per second and blends spread between the
+  hip and ADS multipliers. The motor receives the weapon's ADS move-speed multiplier. Field of view, zoom-scaled
+  sensitivity, scope overlay and reticles are presentation only (`GameCamera`, `HudController.Weapons.cs`).
+- **Loadouts and attachments.** `PlayerLoadout` (replicated, 8 bytes) holds two weapon indices and three attachment
+  indices per weapon (muzzle, underbarrel, optic) into `GameContent.weapons` / `GameContent.attachments`; both lists are
+  append-only. `WeaponStats.Compute` folds the fitted attachments (plus a weapon's built-in optic, which blocks other
+  optics) into the effective stats. Clients request a loadout with `PlayerAvatar.RequestLoadoutRpc`; the server rate-limits
+  it (5/s), sanitizes it with `LoadoutRules.Sanitize` (weapon in the right slot, attachment allowed by the weapon and in the
+  matching slot), stores it as the player's preferred loadout and applies it at once only while
+  `MatchManager.LoadoutChangesAllowed`. `GameModeRules.LoadoutFor` returns the preferred loadout by default; the Weapon
+  Game overrides it with its ladder. The preferred loadout survives a reconnect.
 - **Lag compensation (hitbox rewind).** Every server tick each character records its pose (server time, position,
   crouch) in a 72-entry ring buffer (`PoseHistory`, ~1.2 s). Each input command carries the server time the client was
   rendering others at (`viewTime`). When a shot resolves, the server clamps that time
@@ -135,7 +152,7 @@ Pure rule classes have no engine/network dependencies and are covered by EditMod
 | send input commands (bounded, sanitized, rate-limited) | set position, velocity or rotation |
 | predict movement/ammo for responsiveness | decide hits, hit zones, damage or kills |
 | render effects and play sounds | change health, shields, charges, cooldowns, ammo |
-| request loadout toggle via a button (accepted only in warmup/buy time) | change bomb state, score, round or match result |
+| request a loadout (validated, rate-limited, applied only in warmup/buy time, otherwise at the next spawn) | change bomb state, score, round or match result |
 | choose its display name (sanitized, 16 chars) | exceed 10 players, connect with another protocol version |
 
 Remaining trust: view angles are input (aim assistance/aimbots are a client-integrity problem, not solved here);

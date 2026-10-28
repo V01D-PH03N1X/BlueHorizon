@@ -74,6 +74,14 @@ namespace BlueHorizon.Testing
                 cmd.pitch = _pitch;
                 return;
             }
+            if (mode == "ads")
+            {
+                // Visual review of optics: stand still and hold aim down sights.
+                cmd.buttons |= InputButtons.Aim;
+                cmd.yaw = _yaw;
+                cmd.pitch = _pitch;
+                return;
+            }
 
             if (match.Phase.Value != _lastPhase)
             {
@@ -118,7 +126,12 @@ namespace BlueHorizon.Testing
                 Vector3 aimPoint = enemy.transform.position + Vector3.up * 1.2f;
                 LookAt(eye, aimPoint);
                 Vector3 view = Quaternion.Euler(-_pitch, _yaw, 0f) * Vector3.forward;
-                if (Vector3.Angle(view, aimPoint - eye) < AimTolerance)
+                // Weapons with an optic aim down sights; scoped ones only fire once fully zoomed.
+                Weapons.WeaponStats stats = _avatar.StatsForSlot(_sim.ActiveSlot);
+                bool scoped = stats.Magnified || stats.Definition?.category == Weapons.WeaponCategory.SniperRifle;
+                if (scoped || stats.Optic != null) cmd.buttons |= InputButtons.Aim;
+                bool steady = !scoped || _sim.Weapons.adsProgress >= 0.9f;
+                if (steady && Vector3.Angle(view, aimPoint - eye) < AimTolerance)
                 {
                     _toggleFire = !_toggleFire;
                     bool automatic = _avatar.WeaponInSlot(_sim.ActiveSlot)?.fireMode == Weapons.FireMode.Automatic;

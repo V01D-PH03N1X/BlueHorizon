@@ -54,6 +54,7 @@ namespace BlueHorizon.UI
             _avatar.Abilities.Activated += OnAbilityActivated;
             _avatar.Abilities.Rejected += OnAbilityRejected;
             ApplyTeamColor();
+            gameObject.AddComponent<LaserSight>().Initialize(_avatar, _rig);
 
             if (IsOwner)
             {
@@ -123,36 +124,59 @@ namespace BlueHorizon.UI
             }
         }
 
+        /// <summary>Shot sound by weapon category; pitch and loudness come from the weapon data.</summary>
+        static Sfx ShotSound(WeaponDefinition weapon, bool suppressed) =>
+            suppressed ? Sfx.SuppressedShot
+            : weapon != null && weapon.category is WeaponCategory.Pistol or WeaponCategory.Revolver ? Sfx.PistolShot
+            : Sfx.RifleShot;
+
         void OnLocalShot(ShotEvent shot)
         {
             WeaponStats stats = _avatar.StatsForSlot(shot.slot);
-            Sfx sfx = stats.Suppressed ? Sfx.SuppressedShot : stats.Definition.slot == WeaponSlot.Primary ? Sfx.RifleShot : Sfx.PistolShot;
-            GameAudio.Play2D(sfx, stats.Suppressed ? 0.55f : 0.8f);
+            WeaponDefinition weapon = stats.Definition;
+            GameAudio.Play2D(ShotSound(weapon, stats.Suppressed), (stats.Suppressed ? 0.55f : 0.8f) * weapon.fireSoundVolume, weapon.fireSoundPitch);
 
             GameCamera cam = GameCamera.Instance;
             Vector3 muzzle = cam != null ? cam.MuzzlePosition : _sim.RenderEyePosition;
-            cam?.Kick(stats.Definition);
+            cam?.Kick(weapon);
 
-            // Visual-only raycast; the server decides what was actually hit.
+            // Visual-only raycasts (one per pellet, same deterministic directions as the server); the server decides hits.
             Vector3 origin = _sim.EyePosition;
-            Vector3 end = origin + shot.direction * stats.Definition.maxRange;
-            if (Physics.Raycast(origin, shot.direction, out RaycastHit hit, stats.Definition.maxRange, GameLayers.ShotMask & ~(1 << GameLayers.Hitbox), QueryTriggerInteraction.Ignore))
+            int pellets = Mathf.Max(1, (int)shot.pellets);
+            for (int i = 0; i < pellets; i++)
             {
-                end = hit.point;
-                Effects.Instance?.Impact(end, false);
+                Vector3 dir = WeaponSimulation.PelletDirection(shot, i);
+                Vector3 end = origin + dir * weapon.maxRange;
+                if (Physics.Raycast(origin, dir, out RaycastHit hit, weapon.maxRange, GameLayers.ShotMask & ~(1 << GameLayers.Hitbox), QueryTriggerInteraction.Ignore))
+                {
+                    end = hit.point;
+                    Effects.Instance?.Impact(end, false);
+                }
+                Effects.Instance?.Tracer(muzzle, end, stats.Suppressed || pellets > 1);
             }
-            Effects.Instance?.Tracer(muzzle, end, stats.Suppressed);
             Effects.Instance?.MuzzleFlash(muzzle, stats.Suppressed);
         }
 
         void OnRemoteShot(Vector3 origin, Vector3 end, byte slot, bool suppressed, bool hitPlayer)
         {
             Vector3 muzzle = _rig.WeaponVisual != null ? _rig.WeaponVisual.position + _rig.WeaponVisual.forward * 0.3f : origin;
-            bool rifle = _avatar.WeaponInSlot(slot)?.slot == WeaponSlot.Primary;
-            Sfx sfx = suppressed ? Sfx.SuppressedShot : rifle ? Sfx.RifleShot : Sfx.PistolShot;
-            float volume = suppressed ? 0.35f : 1f;
-            GameAudio.PlayAt(sfx, origin, volume, 1f, suppressed ? 20f : 90f);
+            WeaponStats stats = _avatar.StatsForSlot(slot);
+            WeaponDefinition weapon = stats.Definition;
+            float volume = (suppressed ? 0.35f : 1f) * (weapon != null ? weapon.fireSoundVolume : 1f);
+            GameAudio.PlayAt(ShotSound(weapon, suppressed), origin, volume, weapon != null ? weapon.fireSoundPitch : 1f, suppressed ? 20f : 90f);
             Effects.Instance?.Tracer(muzzle, end, suppressed);
+            if (weapon != null && weapon.pellets > 1)
+            {
+                // Only the first pellet's end point is replicated; the others are drawn as an approximate cone.
+                Vector3 dir = (end - origin).normalized;
+                float length = Vector3.Distance(origin, end);
+                for (int i = 1; i < weapon.pellets; i++)
+                {
+                    Vector3 spread = Quaternion.Euler(Random.Range(-weapon.pelletSpread, weapon.pelletSpread), Random.Range(-weapon.pelletSpread, weapon.pelletSpread), 0f)
+                                     * Vector3.forward;
+                    Effects.Instance?.Tracer(muzzle, origin + Quaternion.LookRotation(dir) * spread * length, true);
+                }
+            }
             Effects.Instance?.MuzzleFlash(muzzle, suppressed);
             Effects.Instance?.Impact(end, hitPlayer);
         }

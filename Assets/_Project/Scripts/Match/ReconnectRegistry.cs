@@ -10,7 +10,7 @@ namespace BlueHorizon.Match
         public int kills;
         public int deaths;
         public int objectiveScore;
-        public byte suppressorMask;
+        public Player.PlayerLoadout preferredLoadout;
         public int matchId;
         public double disconnectTime;
     }

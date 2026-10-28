@@ -10,7 +10,7 @@ all processes on one machine (localhost).
 |---|---|---|
 | EditMode unit tests | `Tools\run-tests.ps1` | `Logs\editmode-results.xml` |
 | Build client + server | `Tools\build.ps1` (`-Generate` to regenerate content) | `Builds\` |
-| One multiplayer scenario | `Tools\autotest-match.ps1 -Scenario fight\|passive\|explode\|idle\|disconnect` | `Logs\autotest-<scenario>\` |
+| One multiplayer scenario | `Tools\autotest-match.ps1 -Scenario fight\|passive\|explode\|idle\|disconnect\|reconnect\|duel\|deathmatch\|capture\|weapongame\|weapons` | `Logs\autotest-<scenario>\` |
 | All multiplayer scenarios | `Tools\run-all-autotests.ps1` | pass/fail table |
 | 10-player load test | `Tools\loadtest.ps1 -Bots 10 -DurationSeconds 150` | `Logs\loadtest\` |
 | Hit registration under latency | `Tools\latency-matrix.ps1 [-Latencies 0,50,100,150] [-JitterMs n] [-LossPercent p]` | `Logs\latency\results.json` |
@@ -19,6 +19,33 @@ all processes on one machine (localhost).
 The multiplayer scenarios run the **real builds over UDP**: one headless dedicated server and headless clients driven
 by `TestBotInputSource`, which only produces input commands — every action passes the same server validation as a
 human player. The script checks the server log for the expected events.
+
+Bot options for manual or visual runs: `-botLoadout random` (or an explicit `p,s,pm,pu,po,sm,su,so` index list),
+`-botMode ads` (stand still aiming down sights, for optics screenshots), `-showLoadout` (opens the loadout panel after
+spawning), `-screenshotInterval N -screenshotDir path`.
+
+## Results — Milestone 4 (2026-10-28)
+
+### EditMode — 116 / 116 passed
+New (`WeaponsM4Tests`): shotgun pellets (8, inside the cone, deterministic, distinct), summed pellet damage with
+falloff (160 close / 40 beyond 25 m), ADS progress timing and release, ADS blocked while sprinting, sniper hip vs.
+scoped spread, bolt cadence (0.75/s), built-in optic beats a fitted optic, red dot / 4× scope stats, laser affects hip
+fire only, loadout validation (wrong slot, unknown index, disallowed attachment, built-in scope), loadout text
+round-trip, random bot loadouts always valid, generated weapon assets match the balance proposal.
+
+### Automated multiplayer scenarios — 11 / 11 passed (M4 build)
+All ten earlier scenarios still pass, plus **weapons**: Deathmatch with four `-botLoadout random` bots — all four
+loadouts accepted without correction, kills with assault rifle and sniper rifle, "5 kills reached". The Weapon Game
+run climbed all 8 ladder levels (shotgun, precision rifle, sniper and revolver kills) to "Final weapon kill".
+
+### Graphical check
+Windowed bot clients with screenshots: loadout panel, laser beam from the underbarrel to the aim point, red dot
+reticle, holographic ring, 8× scope overlay. Found and fixed: the scope's black bars covered the health and ammo
+panels (overlay moved below the HUD widgets); the red dot was too small at 720p; the `-showLoadout` preview opened
+before the server had applied the loadout; the panel's "applies now / next spawn" line went stale when the phase changed.
+
+### Not verified in M4
+Human play and balance of the new weapons; ADS feel with a real mouse; laser/scope readability for opponents at range.
 
 ## Results — Milestone 3 (2026-10-27)
 

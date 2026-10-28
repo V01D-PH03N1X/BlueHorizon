@@ -57,6 +57,39 @@ namespace BlueHorizon.EditorTools
             AttachmentDefinition suppressor = LoadOrCreate<AttachmentDefinition>(Data + "/Attachments/Suppressor.asset", out bool newSup);
             if (newSup) ConfigureSuppressor(suppressor);
 
+            // Milestone 4 weapons and attachments.
+            WeaponDefinition revolver = LoadOrCreate<WeaponDefinition>(Data + "/Weapons/Revolver.asset", out bool newRevolver);
+            if (newRevolver) ConfigureRevolver(revolver);
+            WeaponDefinition shotgun = LoadOrCreate<WeaponDefinition>(Data + "/Weapons/Shotgun.asset", out bool newShotgun);
+            if (newShotgun) ConfigureShotgun(shotgun);
+            WeaponDefinition dmr = LoadOrCreate<WeaponDefinition>(Data + "/Weapons/PrecisionRifle.asset", out bool newDmr);
+            if (newDmr) ConfigurePrecisionRifle(dmr);
+            WeaponDefinition sniper = LoadOrCreate<WeaponDefinition>(Data + "/Weapons/SniperRifle.asset", out bool newSniper);
+            if (newSniper) ConfigureSniper(sniper);
+
+            AttachmentDefinition laser = LoadOrCreate<AttachmentDefinition>(Data + "/Attachments/Laser.asset", out bool newLaser);
+            if (newLaser) ConfigureLaser(laser);
+            AttachmentDefinition redDot = LoadOrCreate<AttachmentDefinition>(Data + "/Attachments/RedDot.asset", out bool newRedDot);
+            if (newRedDot) ConfigureOptic(redDot, "red_dot", "Red Dot Sight", ReticleStyle.Dot, fov: 0.85f, adsTime: 0.95f, adsSpread: 1f,
+                magnified: false, reticle: new Color(1f, 0.15f, 0.12f), size: new Vector3(0.035f, 0.04f, 0.06f));
+            AttachmentDefinition holo = LoadOrCreate<AttachmentDefinition>(Data + "/Attachments/Holographic.asset", out bool newHolo);
+            if (newHolo) ConfigureOptic(holo, "holo", "Holographic Sight", ReticleStyle.Holographic, fov: 0.8f, adsTime: 1.05f, adsSpread: 0.9f,
+                magnified: false, reticle: new Color(1f, 0.25f, 0.2f), size: new Vector3(0.05f, 0.05f, 0.08f));
+            AttachmentDefinition scope4 = LoadOrCreate<AttachmentDefinition>(Data + "/Attachments/Scope4x.asset", out bool newScope4);
+            if (newScope4) ConfigureOptic(scope4, "scope_4x", "4x Scope", ReticleStyle.Scope, fov: 0.27f, adsTime: 1.6f, adsSpread: 0.6f,
+                magnified: true, reticle: new Color(0.05f, 0.05f, 0.05f), size: new Vector3(0.045f, 0.045f, 0.2f));
+            AttachmentDefinition scope8 = LoadOrCreate<AttachmentDefinition>(Data + "/Attachments/Scope8x.asset", out bool newScope8);
+            if (newScope8) ConfigureOptic(scope8, "scope_8x", "8x Scope", ReticleStyle.Scope, fov: 0.14f, adsTime: 1f, adsSpread: 1f,
+                magnified: true, reticle: new Color(0.05f, 0.05f, 0.05f), size: new Vector3(0.05f, 0.05f, 0.26f));
+
+            // Categories, compatibility and the sniper's built-in scope are always enforced (they are rules, not tuning).
+            SetCompatibility(rifle, WeaponCategory.AssaultRifle, null, suppressor, laser, redDot, holo, scope4);
+            SetCompatibility(pistol, WeaponCategory.Pistol, null, suppressor, laser, redDot);
+            SetCompatibility(revolver, WeaponCategory.Revolver, null, laser, redDot);
+            SetCompatibility(shotgun, WeaponCategory.Shotgun, null, laser, redDot, holo);
+            SetCompatibility(dmr, WeaponCategory.PrecisionRifle, null, suppressor, laser, redDot, holo, scope4);
+            SetCompatibility(sniper, WeaponCategory.SniperRifle, scope8, suppressor, laser);
+
             SmokeGrenadeDefinition smoke = LoadOrCreate<SmokeGrenadeDefinition>(Data + "/Abilities/SmokeGrenade.asset", out bool newSmoke);
             if (newSmoke) ConfigureSmoke(smoke);
             WayblockerDefinition wall = LoadOrCreate<WayblockerDefinition>(Data + "/Abilities/Wayblocker.asset", out bool newWall);
@@ -103,6 +136,22 @@ namespace BlueHorizon.EditorTools
                 weaponGame.loadoutChangesEnabled = false;
                 EditorUtility.SetDirty(weaponGame);
             }
+            if (weaponGame.ladder == null || weaponGame.ladder.Length <= 4)
+            {
+                // Indices into content.weapons below: 0 rifle, 1 pistol, 2 revolver, 3 shotgun, 4 precision rifle, 5 sniper.
+                weaponGame.ladder = new[]
+                {
+                    new WeaponGameLevel { weaponIndex = 0 },
+                    new WeaponGameLevel { weaponIndex = 3 },
+                    new WeaponGameLevel { weaponIndex = 4 },
+                    new WeaponGameLevel { weaponIndex = 5 },
+                    new WeaponGameLevel { weaponIndex = 0, suppressed = true },
+                    new WeaponGameLevel { weaponIndex = 2 },
+                    new WeaponGameLevel { weaponIndex = 1 },
+                    new WeaponGameLevel { weaponIndex = 1, suppressed = true },
+                };
+                EditorUtility.SetDirty(weaponGame);
+            }
 
             content.heavyBomb = heavyBomb;
             content.modes = new GameModeDefinition[] { heavyBomb, duel, deathmatch, capture, weaponGame };
@@ -110,7 +159,9 @@ namespace BlueHorizon.EditorTools
             content.primaryWeapon = rifle;
             content.secondaryWeapon = pistol;
             content.suppressor = suppressor;
-            content.weapons = new[] { rifle, pistol };
+            // Order matters: loadouts and the Weapon Game ladder store indices. Append only.
+            content.weapons = new[] { rifle, pistol, revolver, shotgun, dmr, sniper };
+            content.attachments = new[] { suppressor, laser, redDot, holo, scope4, scope8 };
 
             content.playerPrefab = CreatePlayerPrefab();
             content.matchManagerPrefab = CreateSimplePrefab<MatchManager>(Prefabs + "/Match/MatchManager.prefab", GameLayers.Default);
@@ -202,6 +253,160 @@ namespace BlueHorizon.EditorTools
             a.suppressesFireSound = true;
             a.hidesMinimapFireIndicator = true;
             a.remoteFireVolumeMultiplier = 0.35f;
+            EditorUtility.SetDirty(a);
+        }
+
+        static void SetCompatibility(WeaponDefinition w, WeaponCategory category, AttachmentDefinition fixedOptic, params AttachmentDefinition[] allowed)
+        {
+            w.category = category;
+            w.fixedOptic = fixedOptic;
+            w.allowedAttachments = allowed;
+            EditorUtility.SetDirty(w);
+        }
+
+        // Milestone 4 values are a first balance proposal (see Documentation/WEAPON_BALANCING.md), not playtested.
+
+        static void ConfigureRevolver(WeaponDefinition w)
+        {
+            w.weaponId = "revolver";
+            w.displayName = "Revolver";
+            w.slot = WeaponSlot.Secondary;
+            w.fireMode = FireMode.SemiAutomatic;
+            w.fireRate = 1.1f;
+            w.magazineSize = 6;
+            w.reserveAmmo = 24;
+            w.reloadTime = 2.6f;
+            w.equipTime = 0.45f;
+            w.damage = new ZoneDamage { head = 140, torso = 60, legs = 40 };
+            w.falloff = new RangeFalloff { falloffStart = 30f, falloffEnd = 60f, minMultiplier = 0.7f };
+            w.maxRange = 120f;
+            w.spread = new SpreadSettings { baseSpread = 0.3f, movingSpread = 2f, airborneSpread = 5f, bloomPerShot = 0.8f, maxBloom = 2.4f, crouchMultiplier = 0.8f };
+            w.recoil = new RecoilSettings { verticalPerShot = 2.6f, maxVertical = 6f, horizontalAmplitude = 0.4f, resetTime = 0.9f, recoveryRate = 9f };
+            w.adsTime = 0.2f;
+            w.adsSpreadMultiplier = 0.5f;
+            w.adsMoveSpeedMultiplier = 0.8f;
+            w.adsFovMultiplier = 0.9f;
+            w.viewmodelColor = new Color(0.32f, 0.3f, 0.28f);
+            w.viewmodelSize = new Vector3(0.055f, 0.12f, 0.27f);
+            w.fireSoundPitch = 0.75f;
+            w.fireSoundVolume = 1.15f;
+            EditorUtility.SetDirty(w);
+        }
+
+        static void ConfigureShotgun(WeaponDefinition w)
+        {
+            w.weaponId = "shotgun";
+            w.displayName = "Shotgun";
+            w.slot = WeaponSlot.Primary;
+            w.fireMode = FireMode.SemiAutomatic;
+            w.fireRate = 1.1f;
+            w.magazineSize = 6;
+            w.reserveAmmo = 24;
+            w.reloadTime = 2.8f;
+            w.equipTime = 0.6f;
+            w.damage = new ZoneDamage { head = 30, torso = 20, legs = 12 };
+            w.falloff = new RangeFalloff { falloffStart = 8f, falloffEnd = 25f, minMultiplier = 0.25f };
+            w.maxRange = 60f;
+            w.pellets = 8;
+            w.pelletSpread = 4.5f;
+            w.spread = new SpreadSettings { baseSpread = 0.5f, movingSpread = 1f, airborneSpread = 3f, bloomPerShot = 0f, maxBloom = 0f, crouchMultiplier = 1f };
+            w.recoil = new RecoilSettings { verticalPerShot = 3.5f, maxVertical = 7f, horizontalAmplitude = 0.5f, resetTime = 0.8f, recoveryRate = 10f };
+            w.blockFireWhileSprinting = true;
+            w.adsTime = 0.22f;
+            w.adsSpreadMultiplier = 0.8f;
+            w.adsMoveSpeedMultiplier = 0.8f;
+            w.adsFovMultiplier = 0.92f;
+            w.viewmodelColor = new Color(0.24f, 0.2f, 0.16f);
+            w.viewmodelSize = new Vector3(0.07f, 0.1f, 0.5f);
+            w.fireSoundPitch = 0.6f;
+            w.fireSoundVolume = 1.3f;
+            EditorUtility.SetDirty(w);
+        }
+
+        static void ConfigurePrecisionRifle(WeaponDefinition w)
+        {
+            w.weaponId = "precision_rifle";
+            w.displayName = "Precision Rifle";
+            w.slot = WeaponSlot.Primary;
+            w.fireMode = FireMode.SemiAutomatic;
+            w.fireRate = 2.5f;
+            w.magazineSize = 12;
+            w.reserveAmmo = 36;
+            w.reloadTime = 2.4f;
+            w.equipTime = 0.65f;
+            w.damage = new ZoneDamage { head = 180, torso = 75, legs = 50 };
+            w.falloff = new RangeFalloff { falloffStart = 1000f, falloffEnd = 1000f, minMultiplier = 1f };
+            w.maxRange = 250f;
+            w.spread = new SpreadSettings { baseSpread = 0.3f, movingSpread = 3f, airborneSpread = 7f, bloomPerShot = 0.6f, maxBloom = 2.4f, crouchMultiplier = 0.7f };
+            w.recoil = new RecoilSettings { verticalPerShot = 1.4f, maxVertical = 5f, horizontalAmplitude = 0.35f, resetTime = 0.6f, recoveryRate = 12f };
+            w.adsTime = 0.25f;
+            w.adsSpreadMultiplier = 0.3f;
+            w.adsMoveSpeedMultiplier = 0.7f;
+            w.adsFovMultiplier = 0.85f;
+            w.viewmodelColor = new Color(0.2f, 0.24f, 0.2f);
+            w.viewmodelSize = new Vector3(0.055f, 0.1f, 0.55f);
+            w.fireSoundPitch = 0.85f;
+            w.fireSoundVolume = 1.1f;
+            EditorUtility.SetDirty(w);
+        }
+
+        static void ConfigureSniper(WeaponDefinition w)
+        {
+            w.weaponId = "sniper_rifle";
+            w.displayName = "Sniper Rifle";
+            w.slot = WeaponSlot.Primary;
+            w.fireMode = FireMode.SemiAutomatic;
+            w.fireRate = 0.75f;
+            w.magazineSize = 5;
+            w.reserveAmmo = 15;
+            w.reloadTime = 3.2f;
+            w.equipTime = 0.8f;
+            w.damage = new ZoneDamage { head = 300, torso = 150, legs = 90 };
+            w.falloff = new RangeFalloff { falloffStart = 1000f, falloffEnd = 1000f, minMultiplier = 1f };
+            w.maxRange = 400f;
+            // Inaccurate from the hip, precise only when scoped and still.
+            w.spread = new SpreadSettings { baseSpread = 6f, movingSpread = 20f, airborneSpread = 30f, bloomPerShot = 0f, maxBloom = 0f, crouchMultiplier = 0.8f };
+            w.recoil = new RecoilSettings { verticalPerShot = 4f, maxVertical = 6f, horizontalAmplitude = 0.3f, resetTime = 1.2f, recoveryRate = 8f };
+            w.adsTime = 0.35f;
+            w.adsSpreadMultiplier = 0.015f;
+            w.adsMoveSpeedMultiplier = 0.5f;
+            w.adsFovMultiplier = 0.9f;
+            w.viewmodelColor = new Color(0.14f, 0.16f, 0.14f);
+            w.viewmodelSize = new Vector3(0.06f, 0.1f, 0.65f);
+            w.fireSoundPitch = 0.55f;
+            w.fireSoundVolume = 1.4f;
+            EditorUtility.SetDirty(w);
+        }
+
+        static void ConfigureLaser(AttachmentDefinition a)
+        {
+            a.attachmentId = "laser";
+            a.displayName = "Laser Sight";
+            a.slot = AttachmentSlot.Underbarrel;
+            a.hipSpreadMultiplier = 0.7f;
+            a.visibleLaser = true;
+            a.laserColor = new Color(1f, 0.12f, 0.08f);
+            a.viewmodelOffset = new Vector3(0.035f, -0.03f, 0.12f);
+            a.viewmodelSize = new Vector3(0.025f, 0.025f, 0.08f);
+            a.viewmodelColor = new Color(0.12f, 0.12f, 0.12f);
+            EditorUtility.SetDirty(a);
+        }
+
+        static void ConfigureOptic(AttachmentDefinition a, string id, string name, ReticleStyle style, float fov, float adsTime, float adsSpread,
+            bool magnified, Color reticle, Vector3 size)
+        {
+            a.attachmentId = id;
+            a.displayName = name;
+            a.slot = AttachmentSlot.Optic;
+            a.reticle = style;
+            a.aimFovMultiplier = fov;
+            a.adsTimeMultiplier = adsTime;
+            a.adsSpreadMultiplier = adsSpread;
+            a.magnified = magnified;
+            a.reticleColor = reticle;
+            a.viewmodelOffset = new Vector3(0f, 0.075f, 0.02f);
+            a.viewmodelSize = size;
+            a.viewmodelColor = new Color(0.08f, 0.08f, 0.09f);
             EditorUtility.SetDirty(a);
         }
 

@@ -13,11 +13,12 @@
   deathmatch — Deathmatch, four free-for-all bots, first to 5 kills
   capture    — Capture the Area, 2v2, first to 25 points
   weapongame — Weapon Game, four free-for-all bots climb the weapon ladder
+  weapons    — Deathmatch, four bots with random loadouts (Milestone 4 weapons, optics, laser)
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File Tools\autotest-match.ps1 -Scenario passive
 #>
 param(
-    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect', 'reconnect', 'duel', 'deathmatch', 'capture', 'weapongame')][string]$Scenario = 'fight',
+    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect', 'reconnect', 'duel', 'deathmatch', 'capture', 'weapongame', 'weapons')][string]$Scenario = 'fight',
     [int]$Bots = 2,
     [int]$Port = 7790,
     [int]$RoundsToWin = 2,
@@ -42,12 +43,13 @@ $botMode = switch ($Scenario) { 'idle' { 'idle' } { $_ -in 'passive', 'explode',
 $modeArgs = switch ($Scenario) {
     'duel' { @('-mode', 'duel', '-roundTime', 45, '-roundsToWin', 3) }
     'deathmatch' { @('-mode', 'deathmatch', '-roundTime', 180, '-roundsToWin', 5, '-respawnDelay', 2) }
+    'weapons' { @('-mode', 'deathmatch', '-roundTime', 180, '-roundsToWin', 5, '-respawnDelay', 2) }
     'capture' { @('-mode', 'capture', '-roundTime', 180, '-roundsToWin', 25, '-respawnDelay', 3) }
     'weapongame' { @('-mode', 'weapongame', '-roundTime', 200, '-respawnDelay', 2) }
     default { @('-roundTime', $roundTime, '-roundsToWin', $RoundsToWin) }
 }
-if ($Scenario -in 'deathmatch', 'capture', 'weapongame' -and $Bots -lt 4) { $Bots = 4 }
-$botArgs = if ($Scenario -eq 'duel') { @('-botSite', 0) } else { @() }
+if ($Scenario -in 'deathmatch', 'capture', 'weapongame', 'weapons' -and $Bots -lt 4) { $Bots = 4 }
+$botArgs = switch ($Scenario) { 'duel' { @('-botSite', 0) } 'weapons' { @('-botLoadout', 'random') } default { @() } }
 if ($Scenario -in 'disconnect', 'reconnect' -and $Bots -lt 3) { $Bots = 3 }
 
 $sArgs = @('-port', $Port, '-logFile', $serverLog, '-preRoundTime', 2, '-postRoundTime', 3,
@@ -84,10 +86,10 @@ foreach ($c in $clients) { if (-not $c.HasExited) { $c.WaitForExit(10000) | Out-
 if (-not $finished) { Stop-Process -Id $serverProc.Id -Force; Write-Host "[$Scenario] Server did not finish in time" -ForegroundColor Red }
 
 $log = Get-Content $serverLog
-$events = $log | Where-Object { $_ -match '^\[BH\]\[(Server|Match|Bomb|Kill|Ability|Hosting)\]' }
+$events = $log | Where-Object { $_ -match '^\[BH\]\[(Server|Match|Bomb|Kill|Ability|Hosting|Loadout)\]' }
 $events | ForEach-Object { Write-Host "  $_" }
 
-$ffa = $Scenario -in 'deathmatch', 'weapongame'
+$ffa = $Scenario -in 'deathmatch', 'weapongame', 'weapons'
 $checks = [ordered]@{
     'Server started'          = '\[BH\]\[Server\] Started'
     'Players joined'          = $(if ($ffa) { 'joined \(free-for-all\)' } else { 'joined team Alpha' })
@@ -106,6 +108,7 @@ switch ($Scenario) {
     'deathmatch' { $checks['Kills happened'] = '\[BH\]\[Kill\]'; $checks['Kill limit or time'] = '5 kills reached|Time expired' }
     'capture'    { $checks['Area captured'] = 'Area captured by'; $checks['Points or time'] = '25 points reached|Time expired' }
     'weapongame' { $checks['Ladder advanced'] = 'advanced to level'; $checks['Final weapon or time'] = 'Final weapon kill|Time expired' }
+    'weapons'    { $checks['Random loadouts applied'] = '\[BH\]\[Loadout\] Bot\d+ loadout [\d,]+ \(applied\)'; $checks['Kills happened'] = '\[BH\]\[Kill\]'; $checks['Kill limit or time'] = '5 kills reached|Time expired' }
     'reconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Bot1 reconnected with state'] = "Player 'Bot1' reconnected to match" }
     'disconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Round ended after disconnect'] = 'Round \d+ ended' }
 }
@@ -114,6 +117,13 @@ $failed = 0
 foreach ($k in $checks.Keys) {
     $ok = [bool]($log | Select-String -Pattern $checks[$k] -Quiet)
     if ($ok) { Write-Host "  PASS  $k" -ForegroundColor Green } else { Write-Host "  FAIL  $k" -ForegroundColor Red; $failed++ }
+}
+if ($Scenario -eq 'weapons') {
+    # Bot loadouts are generated valid, so the server must never have to correct one; and the bots should not all carry the same primary.
+    $corrected = [bool]($log | Select-String -Pattern 'invalid loadout request' -Quiet)
+    if ($corrected) { Write-Host '  FAIL  No loadout corrections' -ForegroundColor Red; $failed++ } else { Write-Host '  PASS  No loadout corrections' -ForegroundColor Green }
+    $primaries = $log | Select-String -Pattern 'Bot\d+ loadout (\d+),' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique
+    Write-Host "  INFO  distinct primary weapons: $($primaries -join ', ')"
 }
 $errors = $log | Select-String -Pattern 'Exception|\[BH\]\[[A-Za-z]+\].*(error|Error)' | Select-Object -First 10
 if ($errors) { Write-Host '  Errors/exceptions in server log:' -ForegroundColor Yellow; $errors | ForEach-Object { Write-Host "    $_" } }

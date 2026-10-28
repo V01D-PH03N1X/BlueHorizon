@@ -1,0 +1,65 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27967e29c3b99ed49a952c9caaeeb6fd, type: 3}
+  m_Name: PrecisionRifle
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.Weapons.WeaponDefinition
+  weaponId: precision_rifle
+  displayName: Precision Rifle
+  slot: 0
+  category: 4
+  fireMode: 0
+  fireRate: 2.5
+  magazineSize: 12
+  reserveAmmo: 36
+  reloadTime: 2.4
+  equipTime: 0.65
+  damage:
+    head: 180
+    torso: 75
+    legs: 50
+  falloff:
+    falloffStart: 1000
+    falloffEnd: 1000
+    minMultiplier: 1
+  maxRange: 250
+  pellets: 1
+  pelletSpread: 0
+  spread:
+    baseSpread: 0.3
+    movingSpread: 3
+    airborneSpread: 7
+    bloomPerShot: 0.6
+    maxBloom: 2.4
+    crouchMultiplier: 0.7
+  recoil:
+    verticalPerShot: 1.4
+    maxVertical: 5
+    horizontalAmplitude: 0.35
+    resetTime: 0.6
+    recoveryRate: 12
+  blockFireWhileSprinting: 1
+  canAim: 1
+  adsTime: 0.25
+  adsSpreadMultiplier: 0.3
+  adsMoveSpeedMultiplier: 0.7
+  adsFovMultiplier: 0.85
+  allowedAttachments:
+  - {fileID: 11400000, guid: b016e78789bbcbc4c8bb915bee87e178, type: 2}
+  - {fileID: 11400000, guid: c4dea6a85765da94caec451b602619b4, type: 2}
+  - {fileID: 11400000, guid: 5e5486a4d777ac74093a224c07de4f90, type: 2}
+  - {fileID: 11400000, guid: f19b753b9d7896c43aae763a970dab21, type: 2}
+  - {fileID: 11400000, guid: 4ec7f84601faae24ebaba599db569d38, type: 2}
+  fixedOptic: {fileID: 0}
+  viewmodelColor: {r: 0.2, g: 0.24, b: 0.2, a: 1}
+  viewmodelSize: {x: 0.055, y: 0.1, z: 0.55}
+  fireSoundPitch: 0.85
+  fireSoundVolume: 1.1

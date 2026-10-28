@@ -87,12 +87,11 @@ namespace BlueHorizon.GameModes
             if (LadderLength == 0) return PlayerLoadout.Default;
             int level = UnityEngine.Mathf.Clamp(avatar.ObjectiveScore.Value, 0, LadderLength - 1);
             WeaponGameLevel step = _settings.ladder[level];
-            return new PlayerLoadout
-            {
-                primary = (byte)step.weaponIndex,
-                secondary = PlayerLoadout.None,
-                suppressorMask = (byte)(step.suppressed ? 1 : 0),
-            };
+            PlayerLoadout loadout = PlayerLoadout.Weapons((byte)step.weaponIndex, PlayerLoadout.None);
+            Core.GameContent content = Core.GameContent.Instance;
+            if (step.suppressed && content != null)
+                loadout.primaryMuzzle = content.IndexOfAttachment(content.suppressor);
+            return loadout;
         }
 
         public override void OnMatchStart() => _winner = null;

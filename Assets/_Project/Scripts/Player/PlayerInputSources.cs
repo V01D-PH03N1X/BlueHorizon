@@ -35,6 +35,9 @@ namespace BlueHorizon.Player
             set => PlayerPrefs.SetInt(InvertKey, value ? 1 : 0);
         }
 
+        /// <summary>Set by the camera every frame: current FOV / base FOV (1 when not zoomed).</summary>
+        public static float ZoomSensitivityScale { get; set; } = 1f;
+
         /// <summary>True while a menu owns the cursor; gameplay input is suppressed.</summary>
         public static bool GameplayBlocked { get; set; }
     }
@@ -75,6 +78,7 @@ namespace BlueHorizon.Player
                 (Make("Primary", "<Keyboard>/1"), InputButtons.Weapon1),
                 (Make("Secondary", "<Keyboard>/2"), InputButtons.Weapon2),
                 (Make("Suppressor", "<Keyboard>/t"), InputButtons.ToggleAttachment),
+                (Make("Aim", "<Mouse>/rightButton"), InputButtons.Aim),
             };
             _move.Enable();
             _look.Enable();
@@ -93,7 +97,8 @@ namespace BlueHorizon.Player
             if (InputPreferences.GameplayBlocked)
                 return;
 
-            Vector2 delta = _look.ReadValue<Vector2>() * (MouseDegreesPerCount * InputPreferences.Sensitivity);
+            // While zoomed, look speed scales with the field of view so aiming feels consistent through optics.
+            Vector2 delta = _look.ReadValue<Vector2>() * (MouseDegreesPerCount * InputPreferences.Sensitivity * InputPreferences.ZoomSensitivityScale);
             _yaw = Mathf.Repeat(_yaw + delta.x, 360f);
             float dy = InputPreferences.InvertY ? -delta.y : delta.y;
             _pitch = Mathf.Clamp(_pitch + dy, _minPitch, _maxPitch);

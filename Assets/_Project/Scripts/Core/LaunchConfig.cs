@@ -35,10 +35,14 @@ namespace BlueHorizon.Core
 
         /// <summary>Run the scripted test bot instead of keyboard/mouse input (automated multiplayer tests).</summary>
         public bool bot;
-        /// <summary>Test bot behaviour: "fight" (default), "passive" (objectives only, never shoots) or "idle" (does nothing).</summary>
+        /// <summary>Test bot behaviour: "fight" (default), "passive" (objectives only, never shoots), "idle" (does nothing), "strafe" or "ads" (stands still aiming down sights).</summary>
         public string botMode = "fight";
         /// <summary>Test bot: force the attack site (0 = A, 1 = B); -1 alternates by round.</summary>
         public int botSite = -1;
+        /// <summary>Test bot loadout: "" (default weapons), "random" or an explicit "p,s,pm,pu,po,sm,su,so" index list.</summary>
+        public string botLoadout = "";
+        /// <summary>Open the loadout panel once the local player has spawned (visual review of the UI).</summary>
+        public bool showLoadout;
         /// <summary>Allow a match to start with a single connected player (development only).</summary>
         public bool devSoloStart;
         /// <summary>Quit the process after this many seconds (0 = never). Used by automated tests.</summary>
@@ -127,6 +131,8 @@ namespace BlueHorizon.Core
             config.bot |= args.Has("bot");
             config.botMode = args.GetString("botMode", config.botMode).ToLowerInvariant();
             config.botSite = args.GetInt("botSite", config.botSite);
+            config.botLoadout = args.GetString("botLoadout", config.botLoadout).ToLowerInvariant();
+            config.showLoadout |= args.Has("showLoadout");
             config.devSoloStart |= args.Has("devSoloStart");
             config.quitAfterSeconds = args.GetFloat("quitAfter", config.quitAfterSeconds);
             config.quitAfterMatches = args.GetInt("quitAfterMatches", config.quitAfterMatches);

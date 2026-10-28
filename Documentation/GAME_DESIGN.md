@@ -41,10 +41,10 @@ spectate until the next round.
 - Alpha spawns south, Bravo north; both routes to the zone are ~52–59 m.
 
 ### Weapon Game
-- Ladder (data in the asset): Assault Rifle → Assault Rifle + suppressor → Pistol → Pistol + suppressor.
+- Ladder (data in the asset, 8 levels): Assault Rifle → Shotgun → Precision Rifle → Sniper Rifle →
+  Assault Rifle + suppressor → Revolver → Pistol → Pistol + suppressor.
 - Each kill with a weapon moves the killer to the next level immediately (weapons reset, position and view kept).
-  A kill on the last level wins. Abilities and the suppressor toggle are disabled.
-- New weapons from Milestone 4 extend the ladder as data.
+  A kill on the last level wins. Abilities, the loadout panel and the suppressor toggle are disabled.
 
 ## HeavyBomb
 
@@ -121,6 +121,21 @@ Tie-breaking and edge cases:
 - A side that had **zero players when the round went live** cannot be "eliminated" (development matches with
   reduced team sizes); the round then ends by bomb or timer.
 - The detonation kills every living player within 12 m (visual drama; it happens after the round is already decided).
+
+## Weapons, attachments and loadout (Milestone 4)
+
+- **Weapons:** Assault Rifle, Shotgun, Precision Rifle, Sniper Rifle (primary); Pistol, Revolver (secondary).
+  Values and attachment effects: WEAPON_BALANCING.md.
+- **Aim down sights (right mouse):** tighter spread, zoom (field of view), slower movement, no sprinting.
+  Mouse sensitivity scales with the zoom so the on-screen turn rate stays the same.
+  Iron sights for weapons without an optic; red dot / holographic reticles are drawn at screen centre;
+  magnified scopes (4×, built-in 8× on the sniper) show a full-screen scope and hide the weapon model.
+- **Laser sight:** tighter hip-fire spread, but its beam and dot are visible to every player.
+- **Loadout panel (B):** pick both weapons and one attachment per slot (muzzle, underbarrel, optic) from what the
+  weapon allows. The choice is saved on the client and sent on every join. It applies immediately in warmup and the
+  buy phase, otherwise on the next spawn. T still toggles the suppressor during the buy phase.
+- **Reticle settings (pause menu):** colour (optic default, red, green, cyan, yellow, white) and shape
+  (optic default, dot, ring + dot, cross).
 
 ## Map — Horizon Depot (graybox)
 

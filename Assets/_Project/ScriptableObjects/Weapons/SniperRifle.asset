@@ -1,0 +1,62 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27967e29c3b99ed49a952c9caaeeb6fd, type: 3}
+  m_Name: SniperRifle
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.Weapons.WeaponDefinition
+  weaponId: sniper_rifle
+  displayName: Sniper Rifle
+  slot: 0
+  category: 5
+  fireMode: 0
+  fireRate: 0.75
+  magazineSize: 5
+  reserveAmmo: 15
+  reloadTime: 3.2
+  equipTime: 0.8
+  damage:
+    head: 300
+    torso: 150
+    legs: 90
+  falloff:
+    falloffStart: 1000
+    falloffEnd: 1000
+    minMultiplier: 1
+  maxRange: 400
+  pellets: 1
+  pelletSpread: 0
+  spread:
+    baseSpread: 6
+    movingSpread: 20
+    airborneSpread: 30
+    bloomPerShot: 0
+    maxBloom: 0
+    crouchMultiplier: 0.8
+  recoil:
+    verticalPerShot: 4
+    maxVertical: 6
+    horizontalAmplitude: 0.3
+    resetTime: 1.2
+    recoveryRate: 8
+  blockFireWhileSprinting: 1
+  canAim: 1
+  adsTime: 0.35
+  adsSpreadMultiplier: 0.015
+  adsMoveSpeedMultiplier: 0.5
+  adsFovMultiplier: 0.9
+  allowedAttachments:
+  - {fileID: 11400000, guid: b016e78789bbcbc4c8bb915bee87e178, type: 2}
+  - {fileID: 11400000, guid: c4dea6a85765da94caec451b602619b4, type: 2}
+  fixedOptic: {fileID: 11400000, guid: 3635844f74de5154ca6804557a424efb, type: 2}
+  viewmodelColor: {r: 0.14, g: 0.16, b: 0.14, a: 1}
+  viewmodelSize: {x: 0.06, y: 0.1, z: 0.65}
+  fireSoundPitch: 0.55
+  fireSoundVolume: 1.4

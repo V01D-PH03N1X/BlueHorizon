@@ -35,16 +35,14 @@ namespace BlueHorizon.Player
         public readonly NetworkVariable<int> Kills = new();
         public readonly NetworkVariable<int> Deaths = new();
         public readonly NetworkVariable<int> ObjectiveScore = new();
-        /// <summary>Bit per weapon slot: suppressor fitted.</summary>
-        public readonly NetworkVariable<byte> SuppressorMask = new();
-        /// <summary>Weapons in each slot (indices into GameContent.weapons), chosen by the game mode.</summary>
+        /// <summary>Weapons and attachments in each slot, chosen by the player and the game mode.</summary>
         public readonly NetworkVariable<PlayerLoadout> LoadoutValue = new(PlayerLoadout.Default);
 
         PlayerSimulation _simulation;
         PlayerHealth _health;
         AbilityController _abilities;
         WeaponStats _primary, _secondary;
-        readonly List<AttachmentDefinition> _attachmentScratch = new(2);
+        readonly List<AttachmentDefinition> _attachmentScratch = new(PlayerLoadout.AttachmentSlots);
 
         public PlayerSimulation Simulation => _simulation;
         public PlayerHealth Health => _health;
@@ -82,7 +80,6 @@ namespace BlueHorizon.Player
                 _pendingInit = false;
             }
             All.Add(this);
-            SuppressorMask.OnValueChanged += OnSuppressorChanged;
             LoadoutValue.OnValueChanged += OnLoadoutChanged;
             AliveValue.OnValueChanged += OnAliveChanged;
             RecomputeStats();
@@ -92,6 +89,7 @@ namespace BlueHorizon.Player
             {
                 Local = this;
                 LocalPlayerSpawned?.Invoke(this);
+                LocalLoadout.SendInitial(this);
             }
             AnySpawned?.Invoke(this);
         }
@@ -99,17 +97,10 @@ namespace BlueHorizon.Player
         public override void OnNetworkDespawn()
         {
             All.Remove(this);
-            SuppressorMask.OnValueChanged -= OnSuppressorChanged;
             LoadoutValue.OnValueChanged -= OnLoadoutChanged;
             AliveValue.OnValueChanged -= OnAliveChanged;
             if (Local == this) Local = null;
             AnyDespawned?.Invoke(this);
-        }
-
-        void OnSuppressorChanged(byte previous, byte current)
-        {
-            RecomputeStats();
-            LoadoutChanged?.Invoke();
         }
 
         void OnLoadoutChanged(PlayerLoadout previous, PlayerLoadout current)
@@ -147,15 +138,29 @@ namespace BlueHorizon.Player
         WeaponStats ComputeStats(WeaponDefinition weapon, int slot, GameContent content)
         {
             _attachmentScratch.Clear();
-            if ((SuppressorMask.Value & (1 << slot)) != 0 && content.suppressor != null)
-                _attachmentScratch.Add(content.suppressor);
+            PlayerLoadout loadout = LoadoutValue.Value;
+            for (int a = 0; a < PlayerLoadout.AttachmentSlots; a++)
+            {
+                AttachmentDefinition att = content.AttachmentByIndex(loadout.Attachment(slot, (AttachmentSlot)a));
+                if (att != null) _attachmentScratch.Add(att);
+            }
             return WeaponStats.Compute(weapon, _attachmentScratch);
         }
 
         public WeaponStats PrimaryStats => _primary;
         public WeaponStats SecondaryStats => _secondary;
         public WeaponStats StatsForSlot(int slot) => slot == 0 ? _primary : _secondary;
-        public bool HasSuppressor(int slot) => (SuppressorMask.Value & (1 << slot)) != 0;
+        public bool HasSuppressor(int slot) => StatsForSlot(slot).Suppressed;
+
+        /// <summary>Attachment fitted to a weapon slot (null if none).</summary>
+        public AttachmentDefinition AttachmentIn(int weaponSlot, AttachmentSlot slot)
+        {
+            GameContent content = GameContent.Instance;
+            return content != null ? content.AttachmentByIndex(LoadoutValue.Value.Attachment(weaponSlot, slot)) : null;
+        }
+
+        /// <summary>Server: the loadout the player asked for; modes apply it at spawn unless they dictate weapons.</summary>
+        public PlayerLoadout PreferredLoadout { get; private set; } = PlayerLoadout.Default;
 
         // ───────────── Server API ─────────────
 
@@ -200,30 +205,72 @@ namespace BlueHorizon.Player
 
         public void ServerSetObjectiveScore(int value) => ObjectiveScore.Value = value;
 
-        /// <summary>Server: set the carried weapons (and optionally suppressors). Weapons are reset by the caller.</summary>
+        /// <summary>Server: set the carried weapons and attachments. Weapons are reset by the caller.</summary>
         public void ServerSetLoadout(PlayerLoadout loadout)
         {
-            byte suppressors = loadout.suppressorMask;
-            loadout.suppressorMask = PlayerLoadout.KeepSuppressors;
             LoadoutValue.Value = loadout;
-            if (suppressors != PlayerLoadout.KeepSuppressors) SuppressorMask.Value = suppressors;
             RecomputeStats();
         }
 
-        /// <summary>Server: restore scoreboard and loadout after a reconnect.</summary>
-        public void ServerRestoreStats(int kills, int deaths, int objectiveScore, byte suppressorMask)
+        /// <summary>Server: restore scoreboard and loadout choice after a reconnect.</summary>
+        public void ServerRestoreStats(int kills, int deaths, int objectiveScore, in PlayerLoadout preferred)
         {
             Kills.Value = kills;
             Deaths.Value = deaths;
             ObjectiveScore.Value = objectiveScore;
-            SuppressorMask.Value = suppressorMask;
-            RecomputeStats();
+            PreferredLoadout = preferred;
         }
 
-        public void ServerToggleSuppressor(int slot)
+        /// <summary>Server: fit or remove the suppressor on a weapon slot, if that weapon accepts it.</summary>
+        public bool ServerToggleSuppressor(int slot)
         {
-            SuppressorMask.Value ^= (byte)(1 << slot);
-            RecomputeStats();
+            GameContent content = GameContent.Instance;
+            if (content == null || content.suppressor == null) return false;
+            if (!LoadoutRules.Allows(WeaponInSlot(slot), content.suppressor, AttachmentSlot.Muzzle)) return false;
+            byte index = content.IndexOfAttachment(content.suppressor);
+            PlayerLoadout current = LoadoutValue.Value;
+            byte next = current.Attachment(slot, AttachmentSlot.Muzzle) == index ? PlayerLoadout.None : index;
+            current.SetAttachment(slot, AttachmentSlot.Muzzle, next);
+            ServerSetLoadout(current);
+            PlayerLoadout preferred = PreferredLoadout;
+            if (preferred.Slot(slot) == current.Slot(slot))
+            {
+                preferred.SetAttachment(slot, AttachmentSlot.Muzzle, next);
+                PreferredLoadout = preferred;
+            }
+            return true;
+        }
+
+        float _lastLoadoutRequest = -10f;
+
+        /// <summary>
+        /// Client to server: choose weapons and attachments. The server validates the request, remembers it for the
+        /// next spawn and applies it immediately while loadout changes are allowed (warmup / pre-round).
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestLoadoutRpc(PlayerLoadout requested, RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId) return;
+            float now = Time.realtimeSinceStartup;
+            if (now - _lastLoadoutRequest < 0.2f)
+            {
+                BHLog.Warn("Security", $"Loadout request from client {OwnerClientId} rate-limited");
+                return;
+            }
+            _lastLoadoutRequest = now;
+
+            GameContent content = GameContent.Instance;
+            if (content == null) return;
+            PlayerLoadout valid = LoadoutRules.Sanitize(requested, content.weapons, content.attachments);
+            if (!valid.Equals(requested))
+                BHLog.Warn("Loadout", $"{PlayerName}: invalid loadout request {requested} corrected to {valid}");
+            PreferredLoadout = valid;
+
+            Match.MatchManager match = Match.MatchManager.Instance;
+            bool applyNow = match == null || match.LoadoutChangesAllowed;
+            if (applyNow && match != null) match.RefreshLoadout(this);
+            else if (applyNow) ServerSetLoadout(valid);
+            BHLog.Info("Loadout", $"{PlayerName} loadout {valid} ({(applyNow ? "applied" : "from next spawn")})");
         }
 
         internal void ServerOnKilled(in DamageInfo info)

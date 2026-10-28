@@ -27,7 +27,7 @@ builds, automated tests. See TESTING.md for what was verified and RISKS.md for w
 - Done: free-for-all spawns and capture zone on Horizon Depot; mode-aware HUD, scoreboard, results and test bots.
 - Open: human playtests of the new modes; balance of capture timings and Weapon Game ladder (only 2 weapons until M4).
 
-## Milestone 4 — Weapons and attachments
+## Milestone 4 — Weapons and attachments (implemented 2026-10-27, balance not playtested)
 
 Revolver, shotgun (multi-pellet resolution in `CombatSystem`), precision rifle, sniper rifle (ADS + magnified optic),
 laser attachment, red-dot/holographic sights, customizable reticles, expanded balancing, purchase/economy if desired.

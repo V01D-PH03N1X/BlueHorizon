@@ -15,6 +15,7 @@ MonoBehaviour:
   weaponId: assault_rifle
   displayName: Assault Rifle
   slot: 0
+  category: 0
   fireMode: 1
   fireRate: 4.5
   magazineSize: 31
@@ -30,6 +31,8 @@ MonoBehaviour:
     falloffEnd: 1000
     minMultiplier: 1
   maxRange: 200
+  pellets: 1
+  pelletSpread: 0
   spread:
     baseSpread: 0.15
     movingSpread: 2.5
@@ -44,6 +47,18 @@ MonoBehaviour:
     resetTime: 0.4
     recoveryRate: 14
   blockFireWhileSprinting: 1
+  canAim: 1
+  adsTime: 0.2
+  adsSpreadMultiplier: 0.5
+  adsMoveSpeedMultiplier: 0.75
+  adsFovMultiplier: 0.9
+  allowedAttachments:
+  - {fileID: 11400000, guid: b016e78789bbcbc4c8bb915bee87e178, type: 2}
+  - {fileID: 11400000, guid: c4dea6a85765da94caec451b602619b4, type: 2}
+  - {fileID: 11400000, guid: 5e5486a4d777ac74093a224c07de4f90, type: 2}
+  - {fileID: 11400000, guid: f19b753b9d7896c43aae763a970dab21, type: 2}
+  - {fileID: 11400000, guid: 4ec7f84601faae24ebaba599db569d38, type: 2}
+  fixedOptic: {fileID: 0}
   viewmodelColor: {r: 0.16, g: 0.18, b: 0.2, a: 1}
   viewmodelSize: {x: 0.06, y: 0.1, z: 0.45}
   fireSoundPitch: 1

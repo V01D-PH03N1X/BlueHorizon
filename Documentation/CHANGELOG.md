@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-10-27 — Milestone 4: weapons and attachments
+
+### Added
+- Revolver, Shotgun (8 pellets, server-side per-pellet hitscan with one rewind), Precision Rifle, Sniper Rifle (built-in 8× scope).
+- Laser sight (visible beam for all players), red dot, holographic sight, 4× scope; reticle colour/shape settings.
+- Aim down sights (right mouse): predicted ADS progress, spread/FOV/move-speed changes, zoom-scaled sensitivity, scope overlay.
+- Full loadouts with per-slot attachments, server-validated `RequestLoadoutRpc`, loadout panel (B), choice saved in PlayerPrefs.
+- Bots: `-botLoadout random|<indices>`, ADS with optics, `-botMode ads`; `-showLoadout`; autotest scenario `weapons`.
+- Weapon Game ladder extended to 8 levels.
+
+### Changed
+- `SuppressorMask` replaced by attachment indices in `PlayerLoadout`; reconnect keeps the preferred loadout.
+
 ## 0.3.0 — 2026-10-27 — Milestone 3: additional core modes
 
 ### Added

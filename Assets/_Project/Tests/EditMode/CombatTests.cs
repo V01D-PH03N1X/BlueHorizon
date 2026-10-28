@@ -270,7 +270,7 @@ namespace BlueHorizon.Tests
             Assert.AreEqual(0f, cmd.yaw);
             Assert.AreEqual(85f, cmd.pitch);
             Assert.AreEqual(-127, cmd.moveX);
-            Assert.AreEqual((InputButtons)0x0FFF, cmd.buttons);
+            Assert.AreEqual((InputButtons)0x1FFF, cmd.buttons);
         }
 
         [Test]

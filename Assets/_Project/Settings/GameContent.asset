@@ -26,6 +26,17 @@ MonoBehaviour:
   weapons:
   - {fileID: 11400000, guid: 511bcc4f33f28db47b8e67ae649d74c6, type: 2}
   - {fileID: 11400000, guid: e20c6f9beb475b745af3b26f809ff6ce, type: 2}
+  - {fileID: 11400000, guid: 7133f111eb9b2d2429e65b752faf54e6, type: 2}
+  - {fileID: 11400000, guid: b97040ca469cf2841b92e70e3a175a69, type: 2}
+  - {fileID: 11400000, guid: 05e94049ac90ed6428e2d5b78ccdd0f2, type: 2}
+  - {fileID: 11400000, guid: 98445c533d346494badcd495d1202d57, type: 2}
+  attachments:
+  - {fileID: 11400000, guid: b016e78789bbcbc4c8bb915bee87e178, type: 2}
+  - {fileID: 11400000, guid: c4dea6a85765da94caec451b602619b4, type: 2}
+  - {fileID: 11400000, guid: 5e5486a4d777ac74093a224c07de4f90, type: 2}
+  - {fileID: 11400000, guid: f19b753b9d7896c43aae763a970dab21, type: 2}
+  - {fileID: 11400000, guid: 4ec7f84601faae24ebaba599db569d38, type: 2}
+  - {fileID: 11400000, guid: 3635844f74de5154ca6804557a424efb, type: 2}
   playerPrefab: {fileID: 3479227623090011685, guid: 55a10f777c5c5ef46875d6f319cf3096, type: 3}
   matchManagerPrefab: {fileID: 3909796601854766977, guid: bfa5a20586df68148838b1f0c9913a88, type: 3}
   smokeGrenadePrefab: {fileID: 4818745627751047453, guid: ad610ba2d7520d24eb5220690d3fc182, type: 3}

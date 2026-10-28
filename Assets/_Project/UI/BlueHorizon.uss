@@ -344,3 +344,35 @@ Slider { margin: 0; }
 .victory-sub { font-size: 14px; -unity-text-align: middle-center; color: rgb(170, 182, 198); margin-top: 10px; }
 
 .connecting-text { font-size: 22px; letter-spacing: 4px; -unity-text-align: middle-center; }
+
+/* ───── Optics (Milestone 4) ───── */
+
+.scope-overlay { flex-direction: row; }
+.scope-bar { flex-grow: 1; background-color: rgb(0, 0, 0); }
+.scope-lens { flex-shrink: 0; -unity-background-scale-mode: stretch-to-fill; }
+.scope-line { position: absolute; background-color: rgba(0, 0, 0, 0.9); }
+.scope-line-h { left: 3%; right: 3%; top: 50%; height: 2px; margin-top: -1px; }
+.scope-line-v { top: 3%; bottom: 3%; left: 50%; width: 2px; margin-left: -1px; }
+.scope-center { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin-left: -3px; margin-top: -3px; border-radius: 3px; background-color: rgb(255, 40, 30); }
+
+.reticle { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.reticle-dot { position: absolute; width: 6px; height: 6px; left: -3px; top: -3px; border-radius: 3px; background-color: rgb(255, 40, 30); }
+.reticle-ring { position: absolute; width: 34px; height: 34px; left: -17px; top: -17px; border-radius: 17px; border-width: 2px; border-color: rgb(255, 40, 30); }
+.reticle-cross { position: absolute; left: 0; top: 0; }
+.reticle-cross-h { position: absolute; width: 16px; height: 2px; left: -8px; top: -1px; }
+.reticle-cross-v { position: absolute; width: 2px; height: 16px; left: -1px; top: -8px; }
+
+/* ───── Loadout (Milestone 4) ───── */
+
+.loadout { width: 980px; }
+.loadout-slot { margin-top: 10px; padding: 8px 10px; background-color: rgba(255, 255, 255, 0.03); border-radius: 3px; }
+.loadout-slot-title { font-size: 13px; letter-spacing: 3px; color: rgb(255, 176, 64); -unity-font-style: bold; }
+.loadout-choices { flex-direction: row; flex-wrap: wrap; flex-grow: 1; align-items: center; }
+.loadout-choice { height: 30px; font-size: 12px; letter-spacing: 1px; margin: 4px 6px 0 0; padding: 0 10px; background-color: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.2); }
+.loadout-choice-selected { background-color: rgba(64, 158, 255, 0.55); border-color: rgb(120, 190, 255); }
+.loadout-stats { font-size: 12px; color: rgb(170, 182, 198); margin-top: 6px; }
+.loadout-attachment-row { flex-direction: row; align-items: center; margin-top: 2px; }
+.loadout-attachment-label { width: 120px; font-size: 11px; letter-spacing: 2px; color: rgb(150, 162, 178); }
+.loadout-status { margin-top: 10px; white-space: normal; }
+.loadout-buttons { flex-direction: row; justify-content: flex-end; }
+.loadout-button { width: 160px; margin-left: 8px; }

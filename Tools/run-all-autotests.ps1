@@ -6,7 +6,7 @@
 param([int]$TimeoutSeconds = 240)
 . "$PSScriptRoot\Common.ps1"
 
-$scenarios = [ordered]@{ fight = 7810; passive = 7811; explode = 7812; idle = 7813; disconnect = 7814; reconnect = 7815; duel = 7816; deathmatch = 7817; capture = 7818; weapongame = 7819 }
+$scenarios = [ordered]@{ fight = 7810; passive = 7811; explode = 7812; idle = 7813; disconnect = 7814; reconnect = 7815; duel = 7816; deathmatch = 7817; capture = 7818; weapongame = 7819; weapons = 7820 }
 $jobs = @()
 foreach ($s in $scenarios.Keys) {
     $jobs += Start-Process -FilePath 'powershell' -PassThru -WindowStyle Hidden -ArgumentList @(

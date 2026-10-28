@@ -23,7 +23,7 @@ namespace BlueHorizon.UI
     /// (connect, disconnect, settings, quit).
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
-    public sealed class HudController : MonoBehaviour
+    public sealed partial class HudController : MonoBehaviour
     {
         const int MaxKillFeed = 5;
         const float KillFeedLifetime = 6f;
@@ -103,6 +103,7 @@ namespace BlueHorizon.UI
             BuildScoreboard();
             BuildPause();
             BuildVictory();
+            BuildLoadout();
 
             MatchManager.KillFeed += OnKillFeed;
             MatchManager.BombExploded += OnBombExploded;
@@ -347,6 +348,8 @@ namespace BlueHorizon.UI
             _crossRight = Box(_crosshair, "cross-line", "cross-h");
             Box(_crosshair, "cross-dot");
 
+            BuildOptics();
+
             _hitmarker = Box(_hud, "hitmarker");
             for (int i = 0; i < 4; i++)
             {
@@ -403,6 +406,7 @@ namespace BlueHorizon.UI
             _invert = new Toggle { value = InputPreferences.InvertY };
             _invert.RegisterValueChangedCallback(e => InputPreferences.InvertY = e.newValue);
             invertRow.Add(_invert);
+            BuildReticleSettings(panel);
 
             MakeButton(panel, "RESUME", () => SetPaused(false), "button-primary");
             MakeButton(panel, "DISCONNECT", () =>
@@ -456,13 +460,17 @@ namespace BlueHorizon.UI
             bool inMenu = !inMatch && !connecting;
 
             Keyboard kb = Keyboard.current;
-            if (inMatch && kb != null && kb.escapeKey.wasPressedThisFrame) SetPaused(!_paused);
+            bool loadoutWasOpen = _loadoutOpen;
+            HandleLoadoutKey(kb, inMatch);
+            if (inMatch && kb != null && kb.escapeKey.wasPressedThisFrame && !loadoutWasOpen) SetPaused(!_paused);
             if (!inMatch) _paused = false;
+            if (_paused) _loadoutOpen = false;
 
             Show(_menu, inMenu);
             Show(_connecting, connecting);
             Show(_hud, inMatch);
             Show(_pause, inMatch && _paused);
+            Show(_loadout, inMatch && _loadoutOpen);
 
             bool showScoreboard = inMatch && !_paused && kb != null && kb.tabKey.isPressed;
             MatchManager match = MatchManager.Instance;
@@ -470,7 +478,7 @@ namespace BlueHorizon.UI
             Show(_victory, matchOver && !_paused);
             Show(_scoreboard, showScoreboard && !matchOver && !_paused);
 
-            bool cursorFree = !inMatch || _paused;
+            bool cursorFree = !inMatch || _paused || _loadoutOpen;
             InputPreferences.GameplayBlocked = cursorFree;
             UnityEngine.Cursor.lockState = cursorFree ? CursorLockMode.None : CursorLockMode.Locked;
             UnityEngine.Cursor.visible = cursorFree;
@@ -486,6 +494,7 @@ namespace BlueHorizon.UI
             UpdateWeapon();
             UpdateAbilities();
             UpdateCrosshair();
+            UpdateOptics();
             UpdatePrompt(match);
             UpdateKillFeed();
             UpdateOverlays();
@@ -731,10 +740,10 @@ namespace BlueHorizon.UI
             _ammoMag.EnableInClassList("ammo-low", def != null && mag <= def.magazineSize / 4);
             _ammoReserve.text = $"/ {w.Reserve(w.activeSlot)}";
             _weaponName.text = def != null ? def.displayName.ToUpperInvariant() : "";
-            bool suppressed = local.HasSuppressor(w.activeSlot);
-            _weaponTags.text = (suppressed ? "SUPPRESSED · −20% DMG" : "") + (w.IsReloading ? (suppressed ? " · " : "") + "RELOADING" : "");
+            _weaponTags.text = WeaponTags(local, w.activeSlot, w.IsReloading);
             MatchManager match = MatchManager.Instance;
-            _weaponHint.text = match != null && match.LoadoutChangesAllowed ? "T · toggle suppressor" : "";
+            bool canChange = match != null && match.Mode != null && match.Mode.loadoutChangesEnabled;
+            _weaponHint.text = !canChange ? "" : match.LoadoutChangesAllowed ? "B · loadout   T · suppressor" : "B · loadout (next spawn)";
         }
 
         void UpdateAbilities()
@@ -760,9 +769,12 @@ namespace BlueHorizon.UI
         void UpdateCrosshair()
         {
             PlayerAvatar local = PlayerAvatar.Local;
-            bool visible = local != null && local.IsAlive;
+            // The hip crosshair fades out while aiming down sights (sights, reticles and scopes take over).
+            float ads = GameCamera.Instance != null ? GameCamera.Instance.AdsBlend : 0f;
+            bool visible = local != null && local.IsAlive && ads < 0.5f;
             Show(_crosshair, visible);
             if (!visible) return;
+            _crosshair.style.opacity = 1f - ads * 2f;
 
             PlayerSimulation sim = local.Simulation;
             WeaponSimState w = sim.Weapons;
@@ -775,7 +787,8 @@ namespace BlueHorizon.UI
                 crouched = sim.Crouch > 0.5f,
                 moveFraction = new Vector2(v.x, v.z).magnitude / Mathf.Max(0.01f, sim.Movement.runSpeed),
             };
-            float spread = WeaponSimulation.SpreadAngle(stats.Definition, stats, w.sprayCount, ctx);
+            float spread = WeaponSimulation.SpreadAngle(stats.Definition, stats, w.sprayCount, ctx, w.adsProgress);
+            if (stats.Definition.pellets > 1) spread += stats.Definition.pelletSpread;
             float fov = GameCamera.Instance != null ? GameCamera.Instance.Camera.fieldOfView : 74f;
             float panelHeight = _root.resolvedStyle.height > 0 ? _root.resolvedStyle.height : Screen.height;
             float gap = 4f + Mathf.Tan(spread * Mathf.Deg2Rad) / Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad) * panelHeight * 0.5f;
