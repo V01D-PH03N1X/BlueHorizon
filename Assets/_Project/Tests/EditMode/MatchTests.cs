@@ -250,6 +250,7 @@ namespace BlueHorizon.Tests
             Assert.IsFalse(ConnectionPayload.TryParse(new byte[1024], out _), "Oversized payload");
             Assert.IsNotNull(ConnectionRegistry.Validate(default, false, 0, 10));
             Assert.IsNotNull(ConnectionRegistry.Validate(new ConnectionPayload { protocol = 999 }, true, 0, 10));
+            Assert.IsNotNull(ConnectionRegistry.Validate(new ConnectionPayload { protocol = 1 }, true, 0, 10), "Milestone 1 clients are incompatible");
             Assert.IsNotNull(ConnectionRegistry.Validate(new ConnectionPayload { protocol = ConnectionPayload.CurrentProtocol }, true, 10, 10));
             Assert.IsNull(ConnectionRegistry.Validate(new ConnectionPayload { protocol = ConnectionPayload.CurrentProtocol }, true, 9, 10));
         }

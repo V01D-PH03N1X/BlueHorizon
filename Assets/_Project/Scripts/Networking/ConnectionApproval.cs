@@ -10,8 +10,11 @@ namespace BlueHorizon.Networking
     [Serializable]
     public struct ConnectionPayload
     {
-        /// <summary>Bumped whenever client/server gameplay messages change incompatibly.</summary>
-        public const int CurrentProtocol = 1;
+        /// <summary>
+        /// Bumped whenever client/server gameplay messages change incompatibly (input commands, RPCs, NetworkVariable
+        /// types, network prefabs). 2: lag-comp view time (M2). 3: game modes (M3). 4: loadouts, ADS, pellets (M4).
+        /// </summary>
+        public const int CurrentProtocol = 4;
 
         public int protocol;
         public string playerName;
