@@ -376,3 +376,14 @@ Slider { margin: 0; }
 .loadout-status { margin-top: 10px; white-space: normal; }
 .loadout-buttons { flex-direction: row; justify-content: flex-end; }
 .loadout-button { width: 160px; margin-left: 8px; }
+
+/* Milestone 5: flash, downed state, world markers */
+.flash-overlay { background-color: rgba(255, 255, 248, 0); }
+.downed-overlay { background-color: rgba(120, 0, 0, 0.28); border-width: 60px; border-color: rgba(90, 0, 0, 0.45); }
+.world-marker { position: absolute; width: 80px; align-items: center; }
+.world-marker-icon { width: 14px; height: 14px; rotate: 45deg; border-width: 2px; border-color: rgb(255, 255, 255); }
+.world-marker-label { font-size: 11px; letter-spacing: 1px; -unity-font-style: bold; margin-top: 4px; -unity-text-align: middle-center; }
+.world-marker-enemy .world-marker-icon { background-color: rgba(255, 60, 50, 0.85); border-color: rgb(255, 200, 190); }
+.world-marker-enemy .world-marker-label { color: rgb(255, 120, 110); }
+.world-marker-downed .world-marker-icon { background-color: rgba(70, 230, 120, 0.85); border-color: rgb(210, 255, 220); }
+.world-marker-downed .world-marker-label { color: rgb(120, 255, 160); }

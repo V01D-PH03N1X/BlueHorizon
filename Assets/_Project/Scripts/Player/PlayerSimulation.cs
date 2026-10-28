@@ -298,17 +298,28 @@ namespace BlueHorizon.Player
         }
 
         /// <summary>One step of movement + weapons from a command. Used by server authority and client prediction/replay.</summary>
-        void Simulate(in PlayerInputCommand cmd, float dt, bool authoritative, bool firstPrediction)
+        /// <summary>Crawl speed of a downed player relative to the agent's movement.</summary>
+        public const float DownedSpeedMultiplier = 0.35f;
+        const InputButtons DownedBlocked = InputButtons.Jump | InputButtons.Sprint | InputButtons.Fire | InputButtons.Aim
+                                           | InputButtons.Reload | InputButtons.Interact | InputButtons.Ability1 | InputButtons.Ability2
+                                           | InputButtons.Signature | InputButtons.ToggleAttachment;
+
+        void Simulate(in PlayerInputCommand input, float dt, bool authoritative, bool firstPrediction)
         {
             bool alive = _avatar.IsAlive;
+            // Downed players crawl (forced crouch, slow) and cannot fight, interact or use abilities.
+            bool downed = alive && _avatar.Health.IsDowned;
+            PlayerInputCommand cmd = input;
+            if (downed) cmd.buttons = (cmd.buttons & ~DownedBlocked) | InputButtons.Crouch;
             MatchManager match = MatchManager.Instance;
             bool canMove = alive && (match == null || match.CanMove);
-            bool canFight = alive && (match == null || match.CanFight);
+            bool canFight = alive && !downed && (match == null || match.CanFight);
 
             if (alive && _cc.enabled)
             {
                 WeaponStats active = _avatar.StatsForSlot(_weapons.activeSlot);
                 float aimSpeed = cmd.Has(InputButtons.Aim) && active.Definition != null ? active.AdsMoveSpeedMultiplier : 1f;
+                if (downed) aimSpeed = DownedSpeedMultiplier;
                 var motorCtx = new MotorContext { canMove = canMove, speedMultiplier = aimSpeed };
                 PlayerMotor.Step(ref _motor, cmd, dt, Movement, _cc, motorCtx);
             }
@@ -429,9 +440,10 @@ namespace BlueHorizon.Player
         {
             InputButtons pressed = cmd.buttons & ~_previousButtons;
             _previousButtons = cmd.buttons;
-            InteractHeld = alive && cmd.Has(InputButtons.Interact);
+            bool standing = alive && !_avatar.Health.IsDowned;
+            InteractHeld = standing && cmd.Has(InputButtons.Interact);
 
-            if (!alive) return;
+            if (!standing) return;
 
             Vector3 eye = EyePosition;
             Vector3 aim = WeaponSimulation.ViewRotation(cmd.yaw, cmd.pitch) * Vector3.forward;

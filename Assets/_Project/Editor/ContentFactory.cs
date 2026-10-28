@@ -97,12 +97,35 @@ namespace BlueHorizon.EditorTools
             HealAbilityDefinition heal = LoadOrCreate<HealAbilityDefinition>(Data + "/Abilities/Heal.asset", out bool newHeal);
             if (newHeal) ConfigureHeal(heal);
 
+            // Milestone 5 abilities.
+            FlashGrenadeDefinition flash = LoadOrCreate<FlashGrenadeDefinition>(Data + "/Abilities/FlashGrenade.asset", out bool newFlash);
+            if (newFlash) ConfigureFlash(flash);
+            EnemyAlertDefinition alert = LoadOrCreate<EnemyAlertDefinition>(Data + "/Abilities/EnemyAlert.asset", out bool newAlert);
+            if (newAlert) ConfigureAlert(alert);
+            RevivalDefinition revival = LoadOrCreate<RevivalDefinition>(Data + "/Abilities/Revival.asset", out bool newRevival);
+            if (newRevival) ConfigureRevival(revival);
+
             AgentDefinition striker = LoadOrCreate<AgentDefinition>(Data + "/Agents/Striker.asset", out bool newAgent);
             if (newAgent) ConfigureStriker(striker);
+            if (string.IsNullOrEmpty(striker.role)) striker.role = "Assault · area denial";
             striker.utility1 = smoke;
             striker.utility2 = wall;
             striker.signature = heal;
             EditorUtility.SetDirty(striker);
+
+            AgentDefinition vigil = LoadOrCreate<AgentDefinition>(Data + "/Agents/Vigil.asset", out bool newVigil);
+            if (newVigil) ConfigureVigil(vigil);
+            vigil.utility1 = flash;
+            vigil.utility2 = smoke;
+            vigil.signature = alert;
+            EditorUtility.SetDirty(vigil);
+
+            AgentDefinition lifeline = LoadOrCreate<AgentDefinition>(Data + "/Agents/Lifeline.asset", out bool newLifeline);
+            if (newLifeline) ConfigureLifeline(lifeline);
+            lifeline.utility1 = smoke;
+            lifeline.utility2 = flash;
+            lifeline.signature = revival;
+            EditorUtility.SetDirty(lifeline);
 
             HeavyBombSettings heavyBomb = LoadOrCreate<HeavyBombSettings>(Data + "/GameModes/HeavyBomb.asset", out bool newMode);
             if (newMode)
@@ -156,6 +179,13 @@ namespace BlueHorizon.EditorTools
             content.heavyBomb = heavyBomb;
             content.modes = new GameModeDefinition[] { heavyBomb, duel, deathmatch, capture, weaponGame };
             content.defaultAgent = striker;
+            // Order matters: players pick agents by index. Append only.
+            content.agents = new[] { striker, vigil, lifeline };
+            // Team objective modes use the downed state (Revival); 1v1 and free-for-all modes do not.
+            heavyBomb.downedState = true;
+            capture.downedState = true;
+            EditorUtility.SetDirty(heavyBomb);
+            EditorUtility.SetDirty(capture);
             content.primaryWeapon = rifle;
             content.secondaryWeapon = pistol;
             content.suppressor = suppressor;
@@ -439,6 +469,83 @@ namespace BlueHorizon.EditorTools
             h.maxCharges = 0;
             h.healAmount = 50;
             EditorUtility.SetDirty(h);
+        }
+
+        static void ConfigureFlash(FlashGrenadeDefinition f)
+        {
+            f.abilityId = "flash_grenade";
+            f.displayName = "Flash Grenade";
+            f.description = "Throw a grenade that blinds everyone looking at it, allies and yourself included.";
+            f.cooldown = 1f;
+            f.maxCharges = 2;
+            f.throwSpeed = 19f;
+            f.upwardSpeed = 3f;
+            f.fuseTime = 0.9f;
+            f.flashRadius = 22f;
+            f.maxBlindDuration = 3.2f;
+            f.hudColor = new Color(1f, 0.95f, 0.6f);
+            EditorUtility.SetDirty(f);
+        }
+
+        static void ConfigureAlert(EnemyAlertDefinition e)
+        {
+            e.abilityId = "enemy_alert";
+            e.displayName = "EnemyAlert";
+            e.description = "Scan pulse: enemies within 30 m are marked for your team for 4 s, through walls.";
+            e.cooldown = 35f;
+            e.maxCharges = 0;
+            e.radius = 30f;
+            e.revealDuration = 4f;
+            e.hudColor = new Color(1f, 0.35f, 0.3f);
+            EditorUtility.SetDirty(e);
+        }
+
+        static void ConfigureRevival(RevivalDefinition r)
+        {
+            r.abilityId = "revival";
+            r.displayName = "Revival";
+            r.description = "Instantly revive a downed teammate in sight within 9 m with 75 health.";
+            r.cooldown = 40f;
+            r.maxCharges = 0;
+            r.range = 9f;
+            r.reviveHealth = 75;
+            r.hudColor = new Color(0.4f, 1f, 0.6f);
+            EditorUtility.SetDirty(r);
+        }
+
+        // Vigil and Lifeline are placeholder lore for Milestone 5 (the brief only defines Striker).
+        static void ConfigureVigil(AgentDefinition a)
+        {
+            a.agentId = "vigil";
+            a.codename = "Lighthouse";
+            a.callsign = "Vigil";
+            a.realName = "Mara Lindqvist";
+            a.origin = "Sweden";
+            a.role = "Recon · information";
+            a.biography = "A former coastal-ranger scout who mapped hostile shorelines by night. " +
+                          "She trusts what she can see and makes sure the enemy cannot.";
+            a.unlockedByDefault = true;
+            a.health = new Health.HealthProfile { maxHealth = 115, maxArmor = 25, maxBarrier = 25 };
+            a.movement = new Movement.MovementSettings { runSpeed = 5.4f, sprintSpeed = 7.1f };
+            a.accentColor = new Color(0.45f, 0.75f, 1f);
+            EditorUtility.SetDirty(a);
+        }
+
+        static void ConfigureLifeline(AgentDefinition a)
+        {
+            a.agentId = "lifeline";
+            a.codename = "Kintsugi";
+            a.callsign = "Lifeline";
+            a.realName = "Aiko Mori";
+            a.origin = "Japan";
+            a.role = "Support · revives";
+            a.biography = "A disaster-relief paramedic who learned to work under fire. " +
+                          "Nobody on her team stays down for long.";
+            a.unlockedByDefault = false;
+            a.health = new Health.HealthProfile { maxHealth = 125, maxArmor = 15, maxBarrier = 40, barrierRegenPerSecond = 12f };
+            a.movement = new Movement.MovementSettings { runSpeed = 5.1f, sprintSpeed = 6.7f };
+            a.accentColor = new Color(0.4f, 1f, 0.6f);
+            EditorUtility.SetDirty(a);
         }
 
         static void ConfigureStriker(AgentDefinition a)

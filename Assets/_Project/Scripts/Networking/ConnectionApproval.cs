@@ -13,8 +13,9 @@ namespace BlueHorizon.Networking
         /// <summary>
         /// Bumped whenever client/server gameplay messages change incompatibly (input commands, RPCs, NetworkVariable
         /// types, network prefabs). 2: lag-comp view time (M2). 3: game modes (M3). 4: loadouts, ADS, pellets (M4).
+        /// 5: agents, flash/alert/revive RPCs, downed state (M5).
         /// </summary>
-        public const int CurrentProtocol = 4;
+        public const int CurrentProtocol = 5;
 
         public int protocol;
         public string playerName;

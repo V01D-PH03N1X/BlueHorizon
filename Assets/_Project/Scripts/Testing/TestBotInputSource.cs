@@ -10,7 +10,8 @@ namespace BlueHorizon.Testing
     /// <summary>
     /// Scripted input for automated multiplayer tests (-bot). It produces ordinary input commands, so everything
     /// it does goes through the same server validation as a human player: it follows map routes, fights visible
-    /// enemies, carries/plants/defuses the bomb and uses each of Striker's abilities.
+    /// enemies, carries/plants/defuses the bomb, uses its agent's abilities (smoke, wall, heal, flash, EnemyAlert,
+    /// Revival) and revives downed teammates.
     /// It is a test driver, not game AI.
     /// </summary>
     public sealed class TestBotInputSource : IPlayerInputSource
@@ -31,9 +32,11 @@ namespace BlueHorizon.Testing
         Vector3 _lastPosition;
         float _stuckTime;
         bool _jump;
-        bool _usedSmoke, _usedWall;
+        bool _usedSmoke, _usedWall, _usedFlash;
         float _phaseTime;
         bool _toggleFire;
+        bool _toggleSignature;
+        float _lastBlindLog = -100f;
 
         public float Yaw => _yaw;
         public float Pitch => _pitch;
@@ -68,7 +71,8 @@ namespace BlueHorizon.Testing
 
             MatchManager match = MatchManager.Instance;
             string mode = LaunchConfig.Current.botMode;
-            if (match == null || !_avatar.IsAlive || mode == "idle" || (mode == "strafe" && match.Phase.Value == MatchPhase.PreRound))
+            // Downed bots stay put and wait for a revive.
+            if (match == null || !_avatar.IsAlive || _avatar.Health.IsDowned || mode == "idle" || (mode == "strafe" && match.Phase.Value == MatchPhase.PreRound))
             {
                 cmd.yaw = _yaw;
                 cmd.pitch = _pitch;
@@ -89,7 +93,7 @@ namespace BlueHorizon.Testing
                 _phaseTime = 0f;
                 if (_lastPhase == MatchPhase.PreRound)
                 {
-                    _usedSmoke = _usedWall = false;
+                    _usedSmoke = _usedWall = _usedFlash = false;
                     _route = null;
                 }
             }
@@ -121,10 +125,29 @@ namespace BlueHorizon.Testing
             }
 
             PlayerAvatar enemy = mode == "passive" ? null : FindVisibleEnemy(eye);
+            if (enemy != null && _avatar.Abilities.IsBlinded)
+            {
+                // Flashed: hold fire and back off until the screen clears.
+                if (Time.time - _lastBlindLog > 2f)
+                {
+                    _lastBlindLog = Time.time;
+                    BHLog.Info("Bot", $"Blinded by a flash ({_avatar.Abilities.FlashDuration:0.0}s); holding fire");
+                }
+                cmd.SetMove(Vector2.down);
+                Finish(ref cmd);
+                return;
+            }
             if (enemy != null)
             {
                 Vector3 aimPoint = enemy.transform.position + Vector3.up * 1.2f;
                 LookAt(eye, aimPoint);
+                if (!_usedFlash && match.AbilitiesAllowed && _avatar.Abilities.Definition(AbilitySlot.Utility1) is FlashGrenadeDefinition
+                    && _avatar.Abilities.State(AbilitySlot.Utility1).charges > 0)
+                {
+                    // Throw the flash at the enemy (it may blind this bot too: flashes hit everyone who looks).
+                    cmd.buttons |= InputButtons.Ability1;
+                    _usedFlash = true;
+                }
                 Vector3 view = Quaternion.Euler(-_pitch, _yaw, 0f) * Vector3.forward;
                 // Weapons with an optic aim down sights; scoped ones only fire once fully zoomed.
                 Weapons.WeaponStats stats = _avatar.StatsForSlot(_sim.ActiveSlot);
@@ -142,8 +165,22 @@ namespace BlueHorizon.Testing
                 return;
             }
 
-            if (_avatar.Health.HealthValue.Value < 80 && match.AbilitiesAllowed)
+            AbilityDefinition signature = _avatar.Abilities.Definition(AbilitySlot.Signature);
+            if (signature is HealAbilityDefinition && _avatar.Health.HealthValue.Value < 80 && match.AbilitiesAllowed)
                 cmd.buttons |= InputButtons.Signature;
+            if (signature is EnemyAlertDefinition && match.Phase.Value == MatchPhase.Live && _phaseTime > 3f
+                && _avatar.Abilities.CooldownRemaining(AbilitySlot.Signature) <= 0f)
+            {
+                // Edge-triggered: alternate so a press is seen again once the cooldown is over.
+                _toggleSignature = !_toggleSignature;
+                if (_toggleSignature) cmd.buttons |= InputButtons.Signature;
+            }
+
+            if (match.Phase.Value == MatchPhase.Live && TryRevive(ref cmd, eye, signature))
+            {
+                Finish(ref cmd);
+                return;
+            }
 
             if (match.Phase.Value != MatchPhase.Live)
             {
@@ -239,6 +276,53 @@ namespace BlueHorizon.Testing
             }
 
             Finish(ref cmd);
+        }
+
+        /// <summary>Go to the nearest downed teammate and revive them (Revival ability in range, otherwise hold interact).</summary>
+        bool TryRevive(ref PlayerInputCommand cmd, Vector3 eye, AbilityDefinition signature)
+        {
+            PlayerAvatar downed = null;
+            float best = 25f;
+            foreach (PlayerAvatar other in PlayerAvatar.All)
+            {
+                if (other == _avatar || !other.IsAlive || !other.Health.IsDowned || other.Team != _avatar.Team || other.Team == Team.None) continue;
+                float d = Vector3.Distance(other.Simulation.Position, _sim.Position);
+                if (d < best)
+                {
+                    best = d;
+                    downed = other;
+                }
+            }
+            if (downed == null) return false;
+
+            Vector3 target = downed.Simulation.Position + Vector3.up * 0.5f;
+            if (signature is RevivalDefinition revival && best <= revival.range - 1f
+                && _avatar.Abilities.CooldownRemaining(AbilitySlot.Signature) <= 0f
+                && !Physics.Linecast(eye, target, GameLayers.WorldMask, QueryTriggerInteraction.Ignore))
+            {
+                LookAt(eye, target);
+                _toggleSignature = !_toggleSignature;
+                if (_toggleSignature) cmd.buttons |= InputButtons.Signature;
+                return true;
+            }
+
+            if (best <= 1.2f)
+            {
+                cmd.buttons |= InputButtons.Interact;
+                return true;
+            }
+            Vector3 flat = downed.Simulation.Position - _sim.Position;
+            flat.y = 0f;
+            _yaw = Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg;
+            _pitch = Mathf.MoveTowards(_pitch, -10f, 5f);
+            cmd.SetMove(Vector2.up);
+            if (_stuckTime > 0.6f)
+            {
+                _jump = !_jump;
+                if (_jump) cmd.buttons |= InputButtons.Jump;
+                cmd.SetMove(new Vector2(_stuckTime > 1.2f ? 1f : -1f, 1f));
+            }
+            return true;
         }
 
         void Finish(ref PlayerInputCommand cmd)
@@ -352,7 +436,8 @@ namespace BlueHorizon.Testing
             float bestDist = VisionRange;
             foreach (PlayerAvatar other in PlayerAvatar.All)
             {
-                if (!other.IsAlive || !MatchManager.Instance.AreEnemies(_avatar, other)) continue;
+                // Downed enemies are left to bleed out; the bot looks for standing threats.
+                if (!other.IsAlive || other.Health.IsDowned || !MatchManager.Instance.AreEnemies(_avatar, other)) continue;
                 Vector3 target = other.transform.position + Vector3.up * 1.2f;
                 float dist = Vector3.Distance(eye, target);
                 if (dist > bestDist) continue;

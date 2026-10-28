@@ -101,6 +101,19 @@ namespace BlueHorizon.Health
             return true;
         }
 
+        /// <summary>
+        /// Brings a downed player (health 0) back with <paramref name="health"/> points. Armor stays as it was;
+        /// the barrier starts its regeneration delay. Returns false if the player was not at 0 health.
+        /// </summary>
+        public bool Revive(int health, double now)
+        {
+            if (IsAlive || health <= 0) return false;
+            Health = Math.Min(health, _profile.maxHealth);
+            _lastDamageTime = now;
+            _barrierRegenRemainder = 0f;
+            return true;
+        }
+
         /// <summary>Immediately kills (out-of-bounds, admin). Returns false if already dead.</summary>
         public bool Kill()
         {

@@ -1,7 +1,8 @@
 # Game Design — Vertical Slice
 
 Blue Horizon is a competitive tactical FPS: precise gunplay, short lethal fights, team objectives, agents with
-tactical utility. The vertical slice proves the core loop with one mode (HeavyBomb), one map, one agent and two weapons.
+tactical utility. The vertical slice proved the core loop with one mode, one map, one agent and two weapons; Milestones 3–5 added
+modes, weapons/attachments and agents (Striker, Vigil, Lifeline — see [AGENT_DESIGN.md](AGENT_DESIGN.md)).
 The long-term mode list (Duel, Deathmatch, Capture the Area, Weapon Game, Training Grounds) is in [ROADMAP.md](ROADMAP.md).
 
 ## Game modes
@@ -10,13 +11,15 @@ Selected on the dedicated server with `-mode <id>` (default `heavybomb`). All va
 `ScriptableObjects/GameModes/*.asset`; time limit, score limit and respawn delay can be overridden per server
 (`-timeLimit`/`-roundTime`, `-scoreLimit`/`-roundsToWin`, `-respawnDelay`).
 
-| Mode (`-mode`) | Teams | Players | Structure | Win condition | Respawn | Abilities |
-|---|---|---|---|---|---|---|
-| HeavyBomb (`heavybomb`) | 2 | 10 | rounds (100 s) | first to 7 rounds | next round | yes |
-| Duel (`duel`) | 1v1 | 2 | rounds (60 s) | first to 5 rounds | next round | yes |
-| Deathmatch (`deathmatch`) | free-for-all | 15 | one live phase (10 min) | first to 25 kills, else most kills | 3 s | yes |
-| Capture the Area (`capture`) | 2 | 10 | one live phase (8 min) | first to 100 points, else more points | 5 s | yes |
-| Weapon Game (`weapongame`) | free-for-all | 12 | one live phase (10 min) | kill with the last ladder weapon, else highest level | 2 s | no |
+| Mode (`-mode`) | Teams | Players | Structure | Win condition | Respawn | Abilities | Downed state |
+|---|---|---|---|---|---|---|---|
+| HeavyBomb (`heavybomb`) | 2 | 10 | rounds (100 s) | first to 7 rounds | next round | yes | yes |
+| Duel (`duel`) | 1v1 | 2 | rounds (60 s) | first to 5 rounds | next round | yes | no |
+| Deathmatch (`deathmatch`) | free-for-all | 15 | one live phase (10 min) | first to 25 kills, else most kills | 3 s | yes | no |
+| Capture the Area (`capture`) | 2 | 10 | one live phase (8 min) | first to 100 points, else more points | 5 s | yes | yes |
+| Weapon Game (`weapongame`) | free-for-all | 12 | one live phase (10 min) | kill with the last ladder weapon, else highest level | 2 s | no | no |
+
+Agents (B panel, warmup/pre-round, otherwise next spawn) and the downed state / revives: [AGENT_DESIGN.md](AGENT_DESIGN.md).
 
 Common flow for all modes: warmup (free respawns) → countdown when enough players are present (team modes: one per
 team; free-for-all: two) → freeze time → live → result. Round modes repeat freeze/live/post-round until the score
@@ -169,7 +172,7 @@ the capture zone outline in the junction, and test-bot routes to the zone.
 - All gameplay geometry has box colliders; boundary walls are 5.5 m.
 - Test-bot routes (`BotRoute`) define spawn → site paths used by automated tests.
 
-## Health and shields (Striker)
+## Health and shields (Striker; other agents in AGENT_DESIGN)
 
 | Layer | Max | Behaviour |
 |---|---|---|
@@ -178,7 +181,8 @@ the capture zone outline in the junction, and test-bot routes to the zone.
 | Health | 125 | absorbs last; 0 = death |
 
 Each layer is depleted independently and overflow carries into the next layer within the same hit
-(a 165 rifle headshot from full leaves 10 health). Healing never exceeds max health and is impossible while dead.
+(a 165 rifle headshot from full leaves 10 health). Healing never exceeds max health and is impossible while dead
+or downed. In modes with the downed state, health 0 from a weapon downs the player instead (AGENT_DESIGN).
 Everything is restored at every spawn. In HeavyBomb rounds there is no respawn; in warmup players respawn after 3 s.
 
 ## Movement

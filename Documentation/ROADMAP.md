@@ -32,10 +32,13 @@ builds, automated tests. See TESTING.md for what was verified and RISKS.md for w
 Revolver, shotgun (multi-pellet resolution in `CombatSystem`), precision rifle, sniper rifle (ADS + magnified optic),
 laser attachment, red-dot/holographic sights, customizable reticles, expanded balancing, purchase/economy if desired.
 
-## Milestone 5 — Agent expansion
+## Milestone 5 — Agent expansion (implemented 2026-10-28, balance not playtested)
 
-EnemyAlert, Flash Grenade, Revival (downed state), additional unlockable agents, agent selection and loadout rules,
-optional agent bans.
+- Done: Flash Grenade, EnemyAlert, downed state with hold-to-revive, Revival signature.
+- Done: agents Vigil and Lifeline (Lifeline locked by default), agent selection with server validation, apply rules
+  (now in warmup/pre-round, otherwise next spawn), server-side unlocks and session agent bans.
+- Open: per-player unlocks (needs accounts/progression, M7), a player ban phase, human playtests and balance of the
+  new abilities, server-enforced flash blindness.
 
 ## Milestone 6 — Training Grounds
 

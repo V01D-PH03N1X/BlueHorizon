@@ -26,6 +26,10 @@ namespace BlueHorizon.Audio
         Denied,
         RoundStart,
         UiClick,
+        FlashBang,
+        ScanPulse,
+        Revive,
+        Downed,
     }
 
     /// <summary>
@@ -132,6 +136,10 @@ namespace BlueHorizon.Audio
             _clips[Sfx.Denied] = Tone("denied", 0.15f, 220f, 0.4f, -60f);
             _clips[Sfx.RoundStart] = Tone("roundstart", 0.6f, 440f, 0.4f, 220f);
             _clips[Sfx.UiClick] = Tone("click", 0.03f, 1400f, 0.25f, 0f);
+            _clips[Sfx.FlashBang] = Gunshot("flashbang", rng, 0.9f, 4200f, 5f, 1f);
+            _clips[Sfx.ScanPulse] = Tone("scan", 0.7f, 300f, 0.45f, 900f);
+            _clips[Sfx.Revive] = Tone("revive", 0.5f, 660f, 0.4f, 330f);
+            _clips[Sfx.Downed] = Tone("downed", 0.6f, 330f, 0.45f, -180f);
         }
 
         static AudioClip Make(string name, float[] data)

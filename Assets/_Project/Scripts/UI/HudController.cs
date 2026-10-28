@@ -100,6 +100,7 @@ namespace BlueHorizon.UI
             BuildMenu();
             BuildConnecting();
             BuildHud();
+            BuildAgentHud();
             BuildScoreboard();
             BuildPause();
             BuildVictory();
@@ -107,6 +108,7 @@ namespace BlueHorizon.UI
 
             MatchManager.KillFeed += OnKillFeed;
             MatchManager.BombExploded += OnBombExploded;
+            AbilityController.Burst += OnAbilityBurst;
             if (NetworkBootstrap.Instance != null) NetworkBootstrap.Instance.StateChanged += RefreshMenuStatus;
             RefreshMenuStatus();
         }
@@ -115,6 +117,7 @@ namespace BlueHorizon.UI
         {
             MatchManager.KillFeed -= OnKillFeed;
             MatchManager.BombExploded -= OnBombExploded;
+            AbilityController.Burst -= OnAbilityBurst;
             if (NetworkBootstrap.Instance != null) NetworkBootstrap.Instance.StateChanged -= RefreshMenuStatus;
         }
 
@@ -180,11 +183,13 @@ namespace BlueHorizon.UI
             _menuStatus = Text(form, "", "status");
 
             VisualElement right = Box(_menu, "menu-column", "menu-column-right");
-            AgentDefinition agent = GameContent.Instance != null ? GameContent.Instance.defaultAgent : null;
+            GameContent menuContent = GameContent.Instance;
+            int savedAgent = LocalAgent.SavedIndex(menuContent);
+            AgentDefinition agent = menuContent != null ? menuContent.AgentByIndex(Mathf.Max(0, savedAgent)) : null;
             if (agent != null)
             {
                 VisualElement card = Box(right, "panel", "agent-card");
-                Text(card, "AGENT", "heading");
+                Text(card, "AGENT · CHANGE IN MATCH WITH B", "heading");
                 Text(card, agent.callsign.ToUpperInvariant(), "agent-name");
                 Text(card, $"Codename {agent.codename} · {agent.realName} · {agent.origin}", "agent-meta");
                 Text(card, agent.biography, "agent-bio");
@@ -195,7 +200,7 @@ namespace BlueHorizon.UI
                 VisualElement controls = Box(right, "panel");
                 controls.style.marginTop = 12;
                 Text(controls, "CONTROLS", "heading");
-                Text(controls, "WASD move · Shift sprint · Ctrl/C crouch · Space jump\nLMB fire · R reload · 1/2 weapons · T suppressor (pre-round)\nF plant / defuse · Tab scoreboard · Esc menu", "muted");
+                Text(controls, "WASD move · Shift sprint · Ctrl/C crouch · Space jump\nLMB fire · RMB aim · R reload · 1/2 weapons · T suppressor (pre-round)\nQ / E / X abilities · F plant / defuse / revive · B agent & loadout\nTab scoreboard · Esc menu", "muted");
             }
         }
 
@@ -328,7 +333,7 @@ namespace BlueHorizon.UI
                 _abilityFill[i] = Box(slot, "ability-cooldown-fill");
                 Text(slot, keys[i], "ability-slot-key");
                 AbilityDefinition def = GameContent.Instance?.defaultAgent?.GetAbility((AbilitySlot)i);
-                Text(slot, def != null ? def.displayName.ToUpperInvariant() : "—", "ability-slot-name");
+                _abilityName[i] = Text(slot, def != null ? def.displayName.ToUpperInvariant() : "—", "ability-slot-name");
                 _abilityInfo[i] = Text(slot, "", "ability-slot-info");
                 _abilitySlots[i] = slot;
             }
@@ -493,6 +498,8 @@ namespace BlueHorizon.UI
             UpdateVitals();
             UpdateWeapon();
             UpdateAbilities();
+            UpdateAbilityNames(PlayerAvatar.Local);
+            UpdateAgentHud(match);
             UpdateCrosshair();
             UpdateOptics();
             UpdatePrompt(match);
@@ -517,6 +524,7 @@ namespace BlueHorizon.UI
         {
             PlayerAvatar local = PlayerAvatar.Local;
             if (local == _boundLocal) return;
+            BindAgentEvents(_boundLocal, local);
             if (_boundLocal != null)
             {
                 _boundLocal.HitConfirmed -= OnHitConfirmed;
@@ -743,7 +751,7 @@ namespace BlueHorizon.UI
             _weaponTags.text = WeaponTags(local, w.activeSlot, w.IsReloading);
             MatchManager match = MatchManager.Instance;
             bool canChange = match != null && match.Mode != null && match.Mode.loadoutChangesEnabled;
-            _weaponHint.text = !canChange ? "" : match.LoadoutChangesAllowed ? "B · loadout   T · suppressor" : "B · loadout (next spawn)";
+            _weaponHint.text = !canChange ? "" : match.LoadoutChangesAllowed ? "B · agent & loadout   T · suppressor" : "B · agent & loadout (next spawn)";
         }
 
         void UpdateAbilities()
@@ -759,7 +767,7 @@ namespace BlueHorizon.UI
                 AbilityNetState state = local.Abilities.State(slot);
                 float cd = local.Abilities.CooldownRemaining(slot);
                 bool hasCharge = def.maxCharges == 0 || state.charges > 0;
-                bool available = local.IsAlive && hasCharge && cd <= 0f && (match == null || match.AbilitiesAllowed);
+                bool available = local.IsAlive && !local.Health.IsDowned && hasCharge && cd <= 0f && (match == null || match.AbilitiesAllowed);
                 _abilitySlots[i].EnableInClassList("ability-unavailable", !available);
                 _abilityFill[i].style.height = Length.Percent(def.cooldown > 0 ? 100f * Mathf.Clamp01(cd / def.cooldown) : 0f);
                 _abilityInfo[i].text = cd > 0f ? $"{cd:0}s" : def.maxCharges > 0 ? $"×{state.charges}" : "READY";
@@ -771,7 +779,7 @@ namespace BlueHorizon.UI
             PlayerAvatar local = PlayerAvatar.Local;
             // The hip crosshair fades out while aiming down sights (sights, reticles and scopes take over).
             float ads = GameCamera.Instance != null ? GameCamera.Instance.AdsBlend : 0f;
-            bool visible = local != null && local.IsAlive && ads < 0.5f;
+            bool visible = local != null && local.IsAlive && !local.Health.IsDowned && ads < 0.5f;
             Show(_crosshair, visible);
             if (!visible) return;
             _crosshair.style.opacity = 1f - ads * 2f;
@@ -808,7 +816,14 @@ namespace BlueHorizon.UI
             float progress = -1f;
             double now = Unity.Netcode.NetworkManager.Singleton.ServerTime.Time;
 
-            if (local != null && local.IsAlive && match.Phase.Value == MatchPhase.Live)
+            float downedProgress = -1f;
+            string downedText = local != null && local.IsAlive ? DownedPrompt(local, out downedProgress) : null;
+            if (downedText != null)
+            {
+                text = downedText;
+                progress = downedProgress;
+            }
+            else if (local != null && local.IsAlive && match.Phase.Value == MatchPhase.Live)
             {
                 Side side = match.SideOf(local.Team);
                 Vector3 pos = local.Simulation.Position;
@@ -971,11 +986,11 @@ namespace BlueHorizon.UI
             VisualElement row = Box(block, "scoreboard-row");
             if (a == PlayerAvatar.Local) row.AddToClassList("scoreboard-row-local");
             if (!a.IsAlive) row.AddToClassList("scoreboard-row-dead");
-            Text(row, a.PlayerName, "col-name");
+            Text(row, a.Agent != null ? $"{a.PlayerName}  · {a.Agent.DisplayName}" : a.PlayerName, "col-name");
             Text(row, a.Kills.Value.ToString(CultureInfo.InvariantCulture), "col-num");
             Text(row, a.Deaths.Value.ToString(CultureInfo.InvariantCulture), "col-num");
             Text(row, score.ToString(CultureInfo.InvariantCulture), "col-num");
-            Text(row, !a.IsAlive ? "DEAD" : status, "col-status");
+            Text(row, !a.IsAlive ? "DEAD" : a.Health.IsDowned ? "DOWN" : status, "col-status");
         }
 
 

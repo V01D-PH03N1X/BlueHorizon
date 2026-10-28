@@ -16,6 +16,7 @@ MonoBehaviour:
   codename: WatchDog
   callsign: Striker
   realName: Thomas Schmidt
+  role: "Assault \xB7 area denial"
   origin: Germany
   biography: A former Bundeswehr soldier and tactical specialist who led a special
     operations unit before a classified operation resulted in its dissolution.

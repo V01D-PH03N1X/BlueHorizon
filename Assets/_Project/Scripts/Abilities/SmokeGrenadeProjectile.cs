@@ -11,6 +11,7 @@ namespace BlueHorizon.Abilities
         public Vector3 velocity;
         public double launchTime;
         public float fuse;
+        public GrenadeKind kind;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
@@ -18,15 +19,17 @@ namespace BlueHorizon.Abilities
             serializer.SerializeValue(ref velocity);
             serializer.SerializeValue(ref launchTime);
             serializer.SerializeValue(ref fuse);
+            serializer.SerializeValue(ref kind);
         }
 
-        public bool Equals(GrenadeLaunch o) => origin == o.origin && velocity == o.velocity && launchTime.Equals(o.launchTime) && fuse.Equals(o.fuse);
+        public bool Equals(GrenadeLaunch o) =>
+            origin == o.origin && velocity == o.velocity && launchTime.Equals(o.launchTime) && fuse.Equals(o.fuse) && kind == o.kind;
     }
 
     /// <summary>
-    /// Smoke grenade in flight. Server and clients integrate the same ballistic path from the replicated launch
+    /// Thrown grenade in flight (smoke, flash). Server and clients integrate the same ballistic path from the replicated launch
     /// parameters (gravity + bounces against world geometry), so no per-frame transform sync is needed.
-    /// The server alone decides detonation and spawns the <see cref="SmokeCloud"/>.
+    /// The server alone decides detonation and runs the definition's effect (<see cref="ThrownGrenadeDefinition.Detonate"/>).
     /// </summary>
     public sealed class SmokeGrenadeProjectile : NetworkBehaviour
     {
@@ -38,7 +41,8 @@ namespace BlueHorizon.Abilities
 
         public readonly NetworkVariable<GrenadeLaunch> Launch = new();
 
-        SmokeGrenadeDefinition _definition;
+        ThrownGrenadeDefinition _definition;
+        PlayerAvatar _thrower;
         Team _team;
         Vector3 _position, _velocity;
         double _simulatedUntil;
@@ -47,11 +51,12 @@ namespace BlueHorizon.Abilities
         GrenadeLaunch _pendingLaunch;
 
         /// <summary>Server, before Spawn(). Values are published in OnNetworkSpawn so they ship with the spawn message.</summary>
-        public void Configure(SmokeGrenadeDefinition definition, Vector3 origin, Vector3 velocity, double now, Team team)
+        public void Configure(ThrownGrenadeDefinition definition, Vector3 origin, Vector3 velocity, double now, PlayerAvatar thrower)
         {
             _definition = definition;
-            _team = team;
-            _pendingLaunch = new GrenadeLaunch { origin = origin, velocity = velocity, launchTime = now, fuse = definition.fuseTime };
+            _thrower = thrower;
+            _team = thrower != null ? thrower.Team : Team.None;
+            _pendingLaunch = new GrenadeLaunch { origin = origin, velocity = velocity, launchTime = now, fuse = definition.fuseTime, kind = definition.Kind };
         }
 
         public override void OnNetworkSpawn()
@@ -76,7 +81,7 @@ namespace BlueHorizon.Abilities
             {
                 var r = body.GetComponent<Renderer>();
                 r.sharedMaterial = new Material(content.emissiveMaterial);
-                r.sharedMaterial.color = new Color(0.8f, 0.85f, 0.9f);
+                r.sharedMaterial.color = Launch.Value.kind == GrenadeKind.Flash ? new Color(1f, 0.95f, 0.55f) : new Color(0.8f, 0.85f, 0.9f);
             }
         }
 
@@ -124,15 +129,8 @@ namespace BlueHorizon.Abilities
         void ServerDetonate()
         {
             _detonated = true;
-            GameContent content = GameContent.Instance;
-            SmokeGrenadeDefinition def = _definition;
-            if (content != null && content.smokeCloudPrefab != null && def != null)
-            {
-                GameObject go = Instantiate(content.smokeCloudPrefab, _position, Quaternion.identity);
-                go.GetComponent<SmokeCloud>().Configure(def.smokeRadius, def.smokeDuration, def.smokeGrowTime, NetworkManager.ServerTime.Time);
-                go.GetComponent<NetworkObject>().Spawn(destroyWithScene: true);
-                BHLog.Info("Ability", $"Smoke detonated at {_position} ({_team} team), radius {def.smokeRadius}, {def.smokeDuration}s");
-            }
+            PlayerAvatar thrower = _thrower != null && _thrower.IsSpawned ? _thrower : null;
+            _definition?.Detonate(_position, thrower, _team, NetworkManager.ServerTime.Time);
             NetworkObject.Despawn(true);
         }
     }

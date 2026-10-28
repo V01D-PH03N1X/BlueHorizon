@@ -14,11 +14,13 @@
   capture    — Capture the Area, 2v2, first to 25 points
   weapongame — Weapon Game, four free-for-all bots climb the weapon ladder
   weapons    — Deathmatch, four bots with random loadouts (Milestone 4 weapons, optics, laser)
+  agents     — HeavyBomb 3v3, every agent on both teams (Milestone 5: flash, EnemyAlert, downed state, revives)
+  agentban   — Deathmatch; the server bans Vigil and keeps Lifeline locked, bots ask for them and must be refused
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File Tools\autotest-match.ps1 -Scenario passive
 #>
 param(
-    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect', 'reconnect', 'duel', 'deathmatch', 'capture', 'weapongame', 'weapons')][string]$Scenario = 'fight',
+    [ValidateSet('fight', 'passive', 'explode', 'idle', 'disconnect', 'reconnect', 'duel', 'deathmatch', 'capture', 'weapongame', 'weapons', 'agents', 'agentban')][string]$Scenario = 'fight',
     [int]$Bots = 2,
     [int]$Port = 7790,
     [int]$RoundsToWin = 2,
@@ -44,11 +46,16 @@ $modeArgs = switch ($Scenario) {
     'duel' { @('-mode', 'duel', '-roundTime', 45, '-roundsToWin', 3) }
     'deathmatch' { @('-mode', 'deathmatch', '-roundTime', 180, '-roundsToWin', 5, '-respawnDelay', 2) }
     'weapons' { @('-mode', 'deathmatch', '-roundTime', 180, '-roundsToWin', 5, '-respawnDelay', 2) }
+    'agents' { @('-roundTime', 90, '-roundsToWin', 3, '-unlockAgents', 'all') }
+    'agentban' { @('-mode', 'deathmatch', '-roundTime', 120, '-roundsToWin', 3, '-respawnDelay', 2, '-banAgents', 'vigil') }
     'capture' { @('-mode', 'capture', '-roundTime', 180, '-roundsToWin', 25, '-respawnDelay', 3) }
     'weapongame' { @('-mode', 'weapongame', '-roundTime', 200, '-respawnDelay', 2) }
     default { @('-roundTime', $roundTime, '-roundsToWin', $RoundsToWin) }
 }
-if ($Scenario -in 'deathmatch', 'capture', 'weapongame', 'weapons' -and $Bots -lt 4) { $Bots = 4 }
+if ($Scenario -in 'deathmatch', 'capture', 'weapongame', 'weapons', 'agentban' -and $Bots -lt 4) { $Bots = 4 }
+# 3v3 in join order (teams alternate): each team gets Vigil, Lifeline and Striker.
+if ($Scenario -eq 'agents' -and $Bots -lt 6) { $Bots = 6 }
+$agentFor = @{ agents = @('vigil', 'lifeline', 'lifeline', 'vigil', 'striker', 'striker'); agentban = @('vigil', 'lifeline') }
 $botArgs = switch ($Scenario) { 'duel' { @('-botSite', 0) } 'weapons' { @('-botLoadout', 'random') } default { @() } }
 if ($Scenario -eq 'reconnect' -and $Bots -lt 3) { $Bots = 3 }
 # 2v2, so the killed bot never leaves its team empty (an empty team correctly sends the match back to warmup).
@@ -65,6 +72,7 @@ $clients = @()
 for ($i = 1; $i -le $Bots; $i++) {
     $cArgs = @('-batchmode', '-nographics', '-connect', '127.0.0.1', '-port', $Port, '-name', "Bot$i", '-bot', '-botMode', $botMode,
         '-quitAfter', $TimeoutSeconds, '-logFile', (Join-Path $logs "bot$i.log")) + $botArgs
+    if ($agentFor.ContainsKey($Scenario)) { $list = $agentFor[$Scenario]; $cArgs += @('-botAgent', $list[($i - 1) % $list.Count]) }
     $clients += Start-Process -FilePath $client -ArgumentList $cArgs -PassThru -WindowStyle Hidden
     Start-Sleep -Milliseconds 500
 }
@@ -88,10 +96,10 @@ foreach ($c in $clients) { if (-not $c.HasExited) { $c.WaitForExit(10000) | Out-
 if (-not $finished) { Stop-Process -Id $serverProc.Id -Force; Write-Host "[$Scenario] Server did not finish in time" -ForegroundColor Red }
 
 $log = Get-Content $serverLog
-$events = $log | Where-Object { $_ -match '^\[BH\]\[(Server|Match|Bomb|Kill|Ability|Hosting|Loadout)\]' }
+$events = $log | Where-Object { $_ -match '^\[BH\]\[(Server|Match|Bomb|Kill|Ability|Hosting|Loadout|Agent)\]' }
 $events | ForEach-Object { Write-Host "  $_" }
 
-$ffa = $Scenario -in 'deathmatch', 'weapongame', 'weapons'
+$ffa = $Scenario -in 'deathmatch', 'weapongame', 'weapons', 'agentban'
 $checks = [ordered]@{
     'Server started'          = '\[BH\]\[Server\] Started'
     'Players joined'          = $(if ($ffa) { 'joined \(free-for-all\)' } else { 'joined team Alpha' })
@@ -111,6 +119,21 @@ switch ($Scenario) {
     'capture'    { $checks['Area captured'] = 'Area captured by'; $checks['Points or time'] = '25 points reached|Time expired' }
     'weapongame' { $checks['Ladder advanced'] = 'advanced to level'; $checks['Final weapon or time'] = 'Final weapon kill|Time expired' }
     'weapons'    { $checks['Random loadouts applied'] = '\[BH\]\[Loadout\] Bot\d+ loadout [\d,]+ \(applied\)'; $checks['Kills happened'] = '\[BH\]\[Kill\]'; $checks['Kill limit or time'] = '5 kills reached|Time expired' }
+    'agents' {
+        $checks['Vigil applied'] = '\[BH\]\[Agent\] Bot\d+ agent Vigil \(applied\)'
+        $checks['Lifeline applied'] = '\[BH\]\[Agent\] Bot\d+ agent Lifeline \(applied\)'
+        $checks['Flash blinded someone'] = 'Flash blinded Bot\d+'
+        $checks['EnemyAlert revealed enemies'] = 'EnemyAlert by Bot\d+ revealed [1-9]'
+        $checks['Player downed'] = 'downed by Bot\d+'
+        $checks['Downed player revived'] = 'revived by Bot\d+'
+        $checks['Kills happened'] = '\[BH\]\[Kill\]'
+    }
+    'agentban' {
+        $checks['Ban and lock announced'] = 'Agents available: Striker; locked: Lifeline; banned: Vigil'
+        $checks['Banned agent refused'] = 'agent request Vigil rejected \(Agent is banned'
+        $checks['Locked agent refused'] = 'agent request Lifeline rejected \(Agent is locked'
+        $checks['Kills happened'] = '\[BH\]\[Kill\]'
+    }
     'reconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Bot1 reconnected with state'] = "Player 'Bot1' reconnected to match" }
     'disconnect' { $checks['Bot1 disconnect handled'] = "Client \d+ 'Bot1' disconnected"; $checks['Round ended after disconnect'] = 'Round \d+ ended' }
 }

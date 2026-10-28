@@ -14,7 +14,11 @@ Status as of 2026-10-26 (vertical slice, milestone 1).
 | L-06 | View angles are trusted input. | Aimbots are possible; this is an anti-cheat problem, not addressed. | Anti-cheat evaluation (Milestone 7). |
 | L-07 | Placeholder art, animation and audio (synthesized at runtime). | Presentation is graybox-level. | Art/audio pass (Milestone 7). |
 | L-08 | No minimap, so the suppressor's "no minimap indicator" effect has no visible consequence yet. | — | Implement with the minimap. |
-| L-09 | Single agent; no agent selection UI; no weapon purchase/economy. | — | Milestones 4–5. |
+| L-09 | Three agents; unlocks and bans are server settings (no per-player progression, no ban phase); no weapon purchase/economy. | — | Accounts/progression (M7); ban phase with map/agent bans (M8). |
+| L-23 | Flash blindness is applied on the victim's client only; the server does not block a blinded player's input. | A modified client can ignore flashes. | Server-side aim/fire penalty while blinded if needed. |
+| L-24 | Milestone 5 ability and agent values (flash radius/duration, EnemyAlert 30 m/4 s/35 s, bleedout 15 s, revive 4 s/30 HP, Revival 9 m/75 HP, agent health and speeds) are proposals checked by unit tests and bots only. | Balance unknown. | Human playtests. |
+| L-25 | A downed bomb carrier keeps the bomb until death; downed players keep active hitboxes at crouch height. | Minor; intended to be finishable. | Revisit after playtests. |
+| L-26 | Vigil and Lifeline lore and art are placeholders (the brief defines only Striker); all agents share the same body. | — | Design/art pass. |
 | L-10 | Matchmaking, cloud allocation and player persistence are interfaces only (`ISessionConnector`, `IServerHostingAdapter`). | Players connect by IP. | Milestone 7. |
 | L-11 | Latency/jitter/loss measured only with the built-in simulator on one machine (no WAN, no two-machine LAN test). | Real routers/Wi-Fi may behave differently (bursty loss). | Two-machine and WAN playtests. |
 | L-12 | Linux dedicated server **builds** (85 MB) but has not been run (no Linux/WSL on the dev PC). It uses the stock socket (Linux does not report ICMP errors on unconnected UDP sockets). | Untested platform. | Run on a Linux VM/host before production. |

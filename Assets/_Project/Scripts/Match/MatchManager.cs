@@ -110,6 +110,9 @@ namespace BlueHorizon.Match
         public readonly NetworkVariable<ModeStatus> Status = new();
         public readonly NetworkVariable<int> ScoreLimit = new();
         public readonly NetworkVariable<float> TimeLimit = new();
+        /// <summary>Agents players may pick (bit i = GameContent.agents[i]); see <see cref="Agents.AgentRules"/>.</summary>
+        public readonly NetworkVariable<uint> AgentUnlockMask = new(1u);
+        public readonly NetworkVariable<uint> AgentBanMask = new();
 
         /// <summary>Clients: kill feed entries as they happen.</summary>
         public static event Action<KillFeedEntry> KillFeed;
@@ -180,6 +183,13 @@ namespace BlueHorizon.Match
 
         public void BroadcastExplosion(Vector3 position) => ExplosionRpc(position);
 
+        public Agents.AgentRejectReason CheckAgent(int index) =>
+            Agents.AgentRules.Check(index, GameContent.Instance.agents, AgentUnlockMask.Value, AgentBanMask.Value);
+
+        /// <summary>Server: the agent a player plays this life (their choice if still available).</summary>
+        public byte AgentFor(PlayerAvatar avatar) =>
+            Agents.AgentRules.Resolve(avatar.PreferredAgent, GameContent.Instance.agents, AgentUnlockMask.Value, AgentBanMask.Value);
+
         public void RefreshLoadout(PlayerAvatar avatar)
         {
             avatar.ServerSetLoadout(_rules.LoadoutFor(avatar));
@@ -207,6 +217,9 @@ namespace BlueHorizon.Match
                 : "Lag compensation OFF");
             ScoreLimit.Value = _settings.scoreLimit;
             TimeLimit.Value = _settings.timeLimit;
+            AgentUnlockMask.Value = Agents.AgentRules.UnlockMask(content.agents, LaunchConfig.Current.unlockAgents);
+            AgentBanMask.Value = Agents.AgentRules.BanMask(content.agents, LaunchConfig.Current.banAgents);
+            LogAgents(content);
 
             foreach (SpawnPoint sp in FindObjectsByType<SpawnPoint>(FindObjectsSortMode.InstanceID))
                 (sp.side == Side.Attack ? _attackSpawns : sp.side == Side.Defense ? _defenseSpawns : _freeSpawns).Add(sp);
@@ -223,6 +236,26 @@ namespace BlueHorizon.Match
             // Clients that finished synchronizing before we spawned (and the host's own client).
             foreach (ulong clientId in NetworkManager.ConnectedClientsIds)
                 ServerSpawnPlayer(clientId);
+        }
+
+        void LogAgents(GameContent content)
+        {
+            var available = new List<string>();
+            var locked = new List<string>();
+            var banned = new List<string>();
+            for (int i = 0; content.agents != null && i < content.agents.Length; i++)
+            {
+                if (content.agents[i] == null) continue;
+                string name = content.agents[i].DisplayName;
+                switch (CheckAgent(i))
+                {
+                    case Agents.AgentRejectReason.None: available.Add(name); break;
+                    case Agents.AgentRejectReason.Banned: banned.Add(name); break;
+                    default: locked.Add(name); break;
+                }
+            }
+            BHLog.Info("Match", $"Agents available: {string.Join(", ", available)}; locked: {(locked.Count > 0 ? string.Join(", ", locked) : "none")}; " +
+                                $"banned: {(banned.Count > 0 ? string.Join(", ", banned) : "none")}. Downed state {(_settings.downedState && !_settings.freeForAll ? "on" : "off")}.");
         }
 
         public override void OnNetworkDespawn()
@@ -279,7 +312,7 @@ namespace BlueHorizon.Match
                 : $"Player '{playerName}' (client {clientId}) joined team {team}");
             if (rejoining)
             {
-                avatar.ServerRestoreStats(previous.kills, previous.deaths, previous.objectiveScore, previous.preferredLoadout);
+                avatar.ServerRestoreStats(previous.kills, previous.deaths, previous.objectiveScore, previous.preferredLoadout, previous.preferredAgent);
                 BHLog.Info("Match", $"Player '{playerName}' reconnected to match {_matchId}; team and stats restored");
             }
 
@@ -302,6 +335,7 @@ namespace BlueHorizon.Match
                     deaths = avatar.Deaths.Value,
                     objectiveScore = avatar.ObjectiveScore.Value,
                     preferredLoadout = avatar.PreferredLoadout,
+                    preferredAgent = avatar.PreferredAgent,
                     matchId = _matchId,
                     disconnectTime = NetworkManager.ServerTime.Time,
                 });
@@ -353,6 +387,7 @@ namespace BlueHorizon.Match
                 ? SpawnSelector.SelectFarthest(_candidates, _occupied, _spawnCursor++)
                 : SpawnSelector.Select(_candidates, _occupied, _spawnCursor++, SpawnClearance);
             Transform t = spawns[index].transform;
+            avatar.ServerApplyAgent(AgentFor(avatar));
             avatar.ServerSpawnAt(t.position + Vector3.up * 0.05f, t.eulerAngles.y);
         }
 
@@ -419,6 +454,7 @@ namespace BlueHorizon.Match
                         break;
                     }
                     if (_settings.respawnDelay > 0f) Respawns(now, _settings.respawnDelay);
+                    FinishStrandedDowned();
                     HandleOutcome(_rules.TickLive(now, Time.deltaTime, phaseOver));
                     break;
 
@@ -438,6 +474,28 @@ namespace BlueHorizon.Match
                 case MatchPhase.MatchOver:
                     if (phaseOver) ResetToWarmup();
                     break;
+            }
+        }
+
+        readonly List<PlayerAvatar> _stranded = new();
+
+        /// <summary>A team whose remaining players are all downed cannot revive anyone: they die (kills go to their downers).</summary>
+        void FinishStrandedDowned()
+        {
+            if (FreeForAll || !_settings.downedState) return;
+            for (int t = 0; t < 2; t++)
+            {
+                Team team = t == 0 ? Team.Alpha : Team.Bravo;
+                bool standing = false;
+                _stranded.Clear();
+                foreach (PlayerAvatar a in PlayerAvatar.All)
+                {
+                    if (!a.IsSpawned || !a.IsAlive || a.Team != team) continue;
+                    if (a.Health.IsDowned) _stranded.Add(a);
+                    else standing = true;
+                }
+                if (standing) continue;
+                foreach (PlayerAvatar a in _stranded) a.Health.ServerFinishDowned("bled out (no teammate left standing)");
             }
         }
 

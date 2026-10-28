@@ -41,6 +41,8 @@ namespace BlueHorizon.Core
         public int botSite = -1;
         /// <summary>Test bot loadout: "" (default weapons), "random" or an explicit "p,s,pm,pu,po,sm,su,so" index list.</summary>
         public string botLoadout = "";
+        /// <summary>Test bot agent: "" (Striker / the saved default), "random" (any available) or an agent id.</summary>
+        public string botAgent = "";
         /// <summary>Open the loadout panel once the local player has spawned (visual review of the UI).</summary>
         public bool showLoadout;
         /// <summary>Allow a match to start with a single connected player (development only).</summary>
@@ -82,6 +84,13 @@ namespace BlueHorizon.Core
         public int roundsToWin = -1;
         public int minPlayersPerTeam = -1;
         public float respawnDelay = -1f;
+        /// <summary>Downed state override: "on", "off" or "" (mode default).</summary>
+        public string downed = "";
+
+        /// <summary>Server: agent ids nobody may pick this session (comma separated).</summary>
+        public string banAgents = "";
+        /// <summary>Server: locked agents made available ("all" or comma-separated ids). No progression system yet.</summary>
+        public string unlockAgents = "";
 
         static LaunchConfig _current;
 
@@ -132,6 +141,10 @@ namespace BlueHorizon.Core
             config.botMode = args.GetString("botMode", config.botMode).ToLowerInvariant();
             config.botSite = args.GetInt("botSite", config.botSite);
             config.botLoadout = args.GetString("botLoadout", config.botLoadout).ToLowerInvariant();
+            config.botAgent = args.GetString("botAgent", config.botAgent).ToLowerInvariant();
+            config.downed = args.GetString("downed", config.downed).ToLowerInvariant();
+            config.banAgents = args.GetString("banAgents", config.banAgents).ToLowerInvariant();
+            config.unlockAgents = args.GetString("unlockAgents", config.unlockAgents).ToLowerInvariant();
             config.showLoadout |= args.Has("showLoadout");
             config.devSoloStart |= args.Has("devSoloStart");
             config.quitAfterSeconds = args.GetFloat("quitAfter", config.quitAfterSeconds);

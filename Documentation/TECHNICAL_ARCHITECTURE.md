@@ -137,8 +137,10 @@ winner and reason text, match winner (team and name), bomb state, zone state (`M
 | Module | Authority | Replication |
 |---|---|---|
 | `PlayerHealth` + `HealthModel` | server model | NetworkVariables health/armor/barrier; owner damage-direction RPC |
-| `AbilityController` + `AbilityDefinition`s | server, from command button edges | NetworkVariable per slot (charges, cooldown end) |
-| `SmokeGrenadeProjectile` / `SmokeCloud` / `Wayblocker` | server spawns/despawns | spawn parameters as NetworkVariables set in `OnNetworkSpawn` |
+| Downed state (`PlayerHealth`, `DownedRules`) | server: goes down, bleedout, revives, finishing | `DownedNetState` NetworkVariable (server times; clients derive progress) |
+| `AbilityController` + `AbilityDefinition`s | server, from command button edges | NetworkVariable per slot (charges, cooldown end); status RPCs: `FlashedRpc` (owner), `RevealedRpc` (EnemyAlert observers only), `SpottedRpc` (owner), `BurstRpc` (all, visual) |
+| `SmokeGrenadeProjectile` (all thrown grenades) / `SmokeCloud` / `Wayblocker` | server spawns/despawns; grenade definitions run the detonation | spawn parameters as NetworkVariables set in `OnNetworkSpawn` (launch includes the `GrenadeKind`) |
+| Agent selection (`PlayerAvatar.AgentIndexValue`, `AgentRules`) | server validates `RequestAgentRpc`, resolves at spawn | agent index NetworkVariable; unlock/ban masks on the `MatchManager` |
 | `MatchManager` | server phase machine, teams, spawns, score | NetworkVariables (phase, end time, scores, sides, bomb state); kill feed & explosion RPCs |
 | `BombStateMachine` | server, pure C# | `BombNetState` NetworkVariable |
 | `HeavyBombRules`, `MatchRules`, `TeamAssignment`, `SpawnSelector` | pure functions | — |
@@ -153,10 +155,13 @@ Pure rule classes have no engine/network dependencies and are covered by EditMod
 | predict movement/ammo for responsiveness | decide hits, hit zones, damage or kills |
 | render effects and play sounds | change health, shields, charges, cooldowns, ammo |
 | request a loadout (validated, rate-limited, applied only in warmup/buy time, otherwise at the next spawn) | change bomb state, score, round or match result |
+| request an agent (validated: known, unlocked, not banned; rate-limited; same apply rule) | pick a locked or banned agent, revive themselves, avoid being downed |
 | choose its display name (sanitized, 16 chars) | exceed 10 players, connect with another protocol version |
 
 Remaining trust: view angles are input (aim assistance/aimbots are a client-integrity problem, not solved here);
 smoke and other visibility are client-side (wallhack-style information is available to a modified client).
+Flash blindness is also client-side (the server decides who is flashed and for how long, but does not stop a
+blinded player's input). EnemyAlert positions are sent only to the observing team's clients.
 
 ## Network simulation
 

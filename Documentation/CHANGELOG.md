@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0 — 2026-10-28 — Milestone 5: agent expansion
+
+### Added
+- Flash Grenade: thrown like the smoke; the server blinds every standing player who sees it (line of sight, view
+  angle, distance), teammates and the thrower included; white-screen effect on the victim's client.
+- EnemyAlert: scan pulse that marks enemies within 30 m through walls for the user's team for 4 s (sent only to those
+  clients); marked players are warned.
+- Downed state (HeavyBomb, Capture): lethal weapon damage downs a player while a teammate stands; crawl, 15 s bleedout,
+  hold F for 4 s to revive; a team with nobody standing dies; kills go to the downer.
+- Revival: signature that instantly revives a downed teammate in sight within 9 m.
+- Agents Vigil (recon: Flash, Smoke, EnemyAlert) and Lifeline (support: Smoke, Flash, Revival; locked by default).
+- Agent selection in the B panel ("Agent & Loadout"), saved per client; server-validated `RequestAgentRpc`;
+  server-side unlocks (`-unlockAgents`) and agent bans (`-banAgents`); `-downed on|off`.
+- Bots: `-botAgent random|<id>`, throw flashes at enemies, hold fire while blinded, use EnemyAlert, revive downed
+  teammates (hold F or Revival). Autotest scenarios `agents` and `agentban`.
+- HUD: flash overlay, world markers (revealed enemies, downed teammates), downed vignette and prompts, agent in the
+  scoreboard, ability names follow the agent; sounds for flash, scan, downed and revive.
+
+### Changed
+- `SmokeGrenadeDefinition` now derives from `ThrownGrenadeDefinition` (shared throw); the grenade launch carries its kind.
+- Network protocol 5 (Milestone 4 builds are rejected).
+
 ## 0.4.0 — 2026-10-27 — Milestone 4: weapons and attachments
 
 ### Added

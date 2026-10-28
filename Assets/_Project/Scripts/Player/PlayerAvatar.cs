@@ -37,6 +37,8 @@ namespace BlueHorizon.Player
         public readonly NetworkVariable<int> ObjectiveScore = new();
         /// <summary>Weapons and attachments in each slot, chosen by the player and the game mode.</summary>
         public readonly NetworkVariable<PlayerLoadout> LoadoutValue = new(PlayerLoadout.Default);
+        /// <summary>Index into <see cref="GameContent.agents"/> of the agent played this life.</summary>
+        public readonly NetworkVariable<byte> AgentIndexValue = new();
 
         PlayerSimulation _simulation;
         PlayerHealth _health;
@@ -51,7 +53,7 @@ namespace BlueHorizon.Player
         public string PlayerName => NameValue.Value.ToString();
         public Team Team => TeamValue.Value;
         public bool IsAlive => AliveValue.Value;
-        public AgentDefinition Agent => GameContent.Instance != null ? GameContent.Instance.defaultAgent : null;
+        public AgentDefinition Agent => GameContent.Instance != null ? GameContent.Instance.AgentByIndex(AgentIndexValue.Value) : null;
 
         /// <summary>Server diagnostics: shots resolved and shots that hit a character.</summary>
         public int ServerShotsFired { get; set; }
@@ -61,6 +63,7 @@ namespace BlueHorizon.Player
         public double DeathTime { get; private set; }
 
         public event Action LoadoutChanged;
+        public event Action AgentChanged;
 
         void Awake()
         {
@@ -82,6 +85,7 @@ namespace BlueHorizon.Player
             All.Add(this);
             LoadoutValue.OnValueChanged += OnLoadoutChanged;
             AliveValue.OnValueChanged += OnAliveChanged;
+            AgentIndexValue.OnValueChanged += OnAgentChanged;
             RecomputeStats();
             ApplyAliveState(AliveValue.Value);
 
@@ -90,6 +94,7 @@ namespace BlueHorizon.Player
                 Local = this;
                 LocalPlayerSpawned?.Invoke(this);
                 LocalLoadout.SendInitial(this);
+                LocalAgent.SendInitial(this);
             }
             AnySpawned?.Invoke(this);
         }
@@ -99,6 +104,7 @@ namespace BlueHorizon.Player
             All.Remove(this);
             LoadoutValue.OnValueChanged -= OnLoadoutChanged;
             AliveValue.OnValueChanged -= OnAliveChanged;
+            AgentIndexValue.OnValueChanged -= OnAgentChanged;
             if (Local == this) Local = null;
             AnyDespawned?.Invoke(this);
         }
@@ -110,6 +116,8 @@ namespace BlueHorizon.Player
         }
 
         void OnAliveChanged(bool previous, bool current) => ApplyAliveState(current);
+
+        void OnAgentChanged(byte previous, byte current) => AgentChanged?.Invoke();
 
         void ApplyAliveState(bool alive)
         {
@@ -162,6 +170,9 @@ namespace BlueHorizon.Player
         /// <summary>Server: the loadout the player asked for; modes apply it at spawn unless they dictate weapons.</summary>
         public PlayerLoadout PreferredLoadout { get; private set; } = PlayerLoadout.Default;
 
+        /// <summary>Server: the agent the player asked for (validated again at every spawn).</summary>
+        public byte PreferredAgent { get; private set; }
+
         // ───────────── Server API ─────────────
 
         string _pendingName;
@@ -213,13 +224,65 @@ namespace BlueHorizon.Player
         }
 
         /// <summary>Server: restore scoreboard and loadout choice after a reconnect.</summary>
-        public void ServerRestoreStats(int kills, int deaths, int objectiveScore, in PlayerLoadout preferred)
+        public void ServerRestoreStats(int kills, int deaths, int objectiveScore, in PlayerLoadout preferred, byte preferredAgent)
         {
             Kills.Value = kills;
             Deaths.Value = deaths;
             ObjectiveScore.Value = objectiveScore;
             PreferredLoadout = preferred;
+            PreferredAgent = preferredAgent;
         }
+
+        /// <summary>Server: play as another agent from now on (health profile, movement and abilities change).</summary>
+        public void ServerApplyAgent(byte index)
+        {
+            if (!IsServer || AgentIndexValue.Value == index) return;
+            AgentIndexValue.Value = index;
+            _health.ServerRebuildForAgent();
+            _abilities.ServerResetForRound();
+            BHLog.Info("Agent", $"{PlayerName} plays {Agent?.DisplayName ?? "?"}");
+        }
+
+        float _lastAgentRequest = -10f;
+
+        /// <summary>
+        /// Client to server: choose an agent. Refused if unknown, locked or banned on this server; otherwise remembered
+        /// and applied immediately while loadout changes are allowed (warmup / pre-round), else at the next spawn.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void RequestAgentRpc(byte index, RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != OwnerClientId) return;
+            float now = Time.realtimeSinceStartup;
+            if (now - _lastAgentRequest < 0.2f)
+            {
+                BHLog.Warn("Security", $"Agent request from client {OwnerClientId} rate-limited");
+                return;
+            }
+            _lastAgentRequest = now;
+
+            GameContent content = GameContent.Instance;
+            Match.MatchManager match = Match.MatchManager.Instance;
+            if (content == null) return;
+            AgentRejectReason reason = match != null ? match.CheckAgent(index) : AgentRules.Check(index, content.agents, ~0u, 0u);
+            string label = index < (content.agents?.Length ?? 0) && content.agents[index] != null ? content.agents[index].DisplayName : $"#{index}";
+            if (reason != AgentRejectReason.None)
+            {
+                BHLog.Warn("Agent", $"{PlayerName}: agent request {label} rejected ({AgentRules.Describe(reason)})");
+                AgentRejectedRpc(reason);
+                return;
+            }
+            PreferredAgent = index;
+            bool applyNow = match == null || match.LoadoutChangesAllowed;
+            if (applyNow && IsAlive) ServerApplyAgent(index);
+            BHLog.Info("Agent", $"{PlayerName} agent {label} ({(applyNow ? "applied" : "from next spawn")})");
+        }
+
+        /// <summary>Owner: the server refused an agent choice.</summary>
+        public event Action<AgentRejectReason> AgentRejected;
+
+        [Rpc(SendTo.Owner)]
+        void AgentRejectedRpc(AgentRejectReason reason) => AgentRejected?.Invoke(reason);
 
         /// <summary>Server: fit or remove the suppressor on a weapon slot, if that weapon accepts it.</summary>
         public bool ServerToggleSuppressor(int slot)

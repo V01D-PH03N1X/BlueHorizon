@@ -22,6 +22,12 @@ MonoBehaviour:
   friendlyFire: 0
   abilitiesEnabled: 1
   loadoutChangesEnabled: 1
+  downedState: 1
+  bleedoutTime: 15
+  reviveTime: 4
+  reviveRange: 1.8
+  reviveHealth: 30
+  downedHealth: 100
   matchStartCountdown: 5
   preRoundTime: 5
   timeLimit: 480

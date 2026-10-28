@@ -183,10 +183,12 @@ namespace BlueHorizon.UI
 
         void OnAbilityActivated(AbilitySlot slot)
         {
-            Sfx sfx = slot switch
+            Sfx sfx = _avatar.Abilities.Definition(slot) switch
             {
-                AbilitySlot.Utility1 => Sfx.Throw,
-                AbilitySlot.Utility2 => Sfx.WallDeploy,
+                ThrownGrenadeDefinition => Sfx.Throw,
+                WayblockerDefinition => Sfx.WallDeploy,
+                EnemyAlertDefinition => Sfx.ScanPulse,
+                RevivalDefinition => Sfx.Revive,
                 _ => Sfx.Heal,
             };
             if (IsOwner) GameAudio.Play2D(sfx, 0.8f);

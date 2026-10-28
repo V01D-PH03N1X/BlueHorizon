@@ -191,7 +191,8 @@ namespace BlueHorizon.UI
         {
             _loadout = Box(_root, "screen", "center-screen", "modal-dim");
             VisualElement panel = Box(_loadout, "panel", "loadout");
-            Text(panel, "LOADOUT", "heading");
+            Text(panel, "AGENT & LOADOUT", "heading");
+            _agentBody = Box(panel);
             _loadoutBody = Box(panel);
             _loadoutStatus = Text(panel, "", "muted", "loadout-status");
             VisualElement buttons = Box(panel, "loadout-buttons");
@@ -229,6 +230,8 @@ namespace BlueHorizon.UI
                 _draft = LocalLoadout.TryGetSaved(out PlayerLoadout saved) ? saved : local.LoadoutValue.Value;
                 GameContent content = GameContent.Instance;
                 if (content != null) _draft = LoadoutRules.Sanitize(_draft, content.weapons, content.attachments);
+                OpenAgentDraft(local);
+                RebuildAgentBody();
                 RebuildLoadoutBody();
             }
         }
@@ -239,8 +242,9 @@ namespace BlueHorizon.UI
             if (local == null) return;
             LocalLoadout.Save(_draft);
             local.RequestLoadoutRpc(_draft);
+            ApplyAgentDraft(local);
             MatchManager match = MatchManager.Instance;
-            ShowToast(match != null && match.LoadoutChangesAllowed ? "Loadout applied" : "Loadout applies on your next spawn");
+            ShowToast(match != null && match.LoadoutChangesAllowed ? "Agent and loadout applied" : "Agent and loadout apply on your next spawn");
             SetLoadoutOpen(false);
         }
 

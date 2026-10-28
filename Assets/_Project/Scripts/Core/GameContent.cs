@@ -20,6 +20,8 @@ namespace BlueHorizon.Core
         [Tooltip("All playable modes; selected on the server with -mode <modeId>. The first entry is the default.")]
         public GameModeDefinition[] modes;
         public AgentDefinition defaultAgent;
+        [Tooltip("Every agent in the game; players pick by index. Append only. The first entry is the default.")]
+        public AgentDefinition[] agents;
 
         [Header("Loadout")]
         public WeaponDefinition primaryWeapon;
@@ -54,6 +56,22 @@ namespace BlueHorizon.Core
             if (weapons != null && weapons.Length > 0)
                 return index >= 0 && index < weapons.Length ? weapons[index] : null;
             return index == 0 ? primaryWeapon : index == 1 ? secondaryWeapon : null; // Before the weapon list existed.
+        }
+
+        public AgentDefinition AgentByIndex(int index) =>
+            agents != null && index >= 0 && index < agents.Length && agents[index] != null ? agents[index] : defaultAgent;
+
+        /// <summary>Index of the agent with this id or callsign (case-insensitive), or -1.</summary>
+        public int FindAgentIndex(string id)
+        {
+            if (agents == null || string.IsNullOrEmpty(id)) return -1;
+            for (int i = 0; i < agents.Length; i++)
+            {
+                if (agents[i] == null) continue;
+                if (string.Equals(agents[i].agentId, id, System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(agents[i].callsign, id, System.StringComparison.OrdinalIgnoreCase)) return i;
+            }
+            return -1;
         }
 
         public AttachmentDefinition AttachmentByIndex(int index) =>

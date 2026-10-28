@@ -17,9 +17,11 @@ namespace BlueHorizon.Agents
         public string codename = "";
         public string callsign = "";
         public string realName = "";
+        [Tooltip("Short role line shown in agent selection.")]
+        public string role = "";
         public string origin = "";
         [TextArea(3, 8)] public string biography = "";
-        [Tooltip("Locked agents can be unlocked by progression later; the vertical slice ships one unlocked agent.")]
+        [Tooltip("Locked agents are unavailable until unlocked. There is no progression yet: servers unlock them with -unlockAgents.")]
         public bool unlockedByDefault = true;
 
         [Header("Survivability")]

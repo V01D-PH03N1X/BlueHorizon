@@ -10,7 +10,7 @@ all processes on one machine (localhost).
 |---|---|---|
 | EditMode unit tests | `Tools\run-tests.ps1` | `Logs\editmode-results.xml` |
 | Build client + server | `Tools\build.ps1` (`-Generate` to regenerate content) | `Builds\` |
-| One multiplayer scenario | `Tools\autotest-match.ps1 -Scenario fight\|passive\|explode\|idle\|disconnect\|reconnect\|duel\|deathmatch\|capture\|weapongame\|weapons` | `Logs\autotest-<scenario>\` |
+| One multiplayer scenario | `Tools\autotest-match.ps1 -Scenario fight\|passive\|explode\|idle\|disconnect\|reconnect\|duel\|deathmatch\|capture\|weapongame\|weapons\|agents\|agentban` | `Logs\autotest-<scenario>\` |
 | All multiplayer scenarios | `Tools\run-all-autotests.ps1` | pass/fail table |
 | 10-player load test | `Tools\loadtest.ps1 -Bots 10 -DurationSeconds 150` | `Logs\loadtest\` |
 | Hit registration under latency | `Tools\latency-matrix.ps1 [-Latencies 0,50,100,150] [-JitterMs n] [-LossPercent p]` | `Logs\latency\results.json` |
@@ -23,6 +23,37 @@ human player. The script checks the server log for the expected events.
 Bot options for manual or visual runs: `-botLoadout random` (or an explicit `p,s,pm,pu,po,sm,su,so` index list),
 `-botMode ads` (stand still aiming down sights, for optics screenshots), `-showLoadout` (opens the loadout panel after
 spawning), `-screenshotInterval N -screenshotDir path`.
+
+Agent options: `-botAgent random|<id>` (bots), server `-unlockAgents all|<ids>`, `-banAgents <ids>`, `-downed on|off`.
+
+## Results — Milestone 5 (2026-10-28)
+
+### EditMode — 136 / 136 passed
+New (`AgentsM5Tests`, 20): flash intensity (facing, behind, out of range, no line of sight, minimum), whiteness
+curve, EnemyAlert range, downed rules (weapon only, last player standing dies, explosions kill), bleedout damage,
+revive conditions, downed net-state progress, `HealthModel.Revive` (only from 0, capped, no healing while down),
+agent unlock/ban/unknown/fallback rules, protocol 4 rejected, generated agents and abilities, downed state only in
+HeavyBomb/Capture, smoke throw settings survived the move to `ThrownGrenadeDefinition`.
+
+### Automated multiplayer scenarios — 13 / 13 passed (M5 build)
+All eleven earlier scenarios pass with the downed state active in HeavyBomb and Capture, plus:
+- **agents** (HeavyBomb 3v3, Vigil + Lifeline + Striker per team, `-unlockAgents all`): all six agents applied;
+  flashes blinded the thrower, allies and enemies (log shows relation, duration, intensity); EnemyAlert revealed
+  3 enemies; players downed, revived by hold-F (30 HP) and by Revival (75 HP), finished while downed, and a team
+  with nobody standing bled out; bots logged "Blinded by a flash; holding fire". No exceptions in any log.
+- **agentban** (Deathmatch, `-banAgents vigil`, Lifeline locked): availability logged, Vigil requests refused as
+  banned, Lifeline as locked, bots played as Striker. (First run failed: only 2 bots never met in 120 s; the
+  scenario now uses 4 bots and passes.)
+
+### Graphical check
+Windowed bot client with screenshots: Agent & Loadout panel (agents, role, health values, abilities), ability bar
+following the agent, flash white-out with the HUD on top, "REVIVING …  keep holding F" prompt with progress and the
+green downed-teammate marker. Not capture|weapongame|weapons|agents|agentban` | `Logsd on screen: the red EnemyAlert enemy marker (no reveal hit enemies while
+the windowed bot was recording) and the downed vignette (the windowed bot was finished within a second).
+
+### Not verified in M5
+Human play and balance of flash, EnemyAlert, downed/revive timings and the new agents; EnemyAlert marker and downed
+vignette on screen; Linux server run.
 
 ## Results — Milestone 4 (2026-10-28)
 
@@ -51,7 +82,7 @@ Human play and balance of the new weapons; ADS feel with a real mouse; laser/sco
 
 ### EditMode — 97 / 97 passed
 New: hostility rules (team / free-for-all), duel timeout winner, free-for-all leader and tie-breaks, weapon ladder
-advance and win, capture zone (capture time, multi-player speed and cap, contested, reverting enemy progress, decay,
+advance and win, capture|weapongame|weapons|agents|agentban` | `Logs zone (capture time, multi-player speed and cap, contested, reverting enemy progress, decay,
 scoring), farthest spawn selection, mode command-line flags, mode player caps.
 
 ### Automated multiplayer scenarios — 10 / 10 passed (M3 build)
@@ -61,8 +92,8 @@ The six HeavyBomb scenarios still pass after the `MatchManager` refactor, plus:
 |---|---|---|
 | duel | 2 bots, first to 3, 45 s rounds | 5 decisive rounds, Alpha wins 3-2 |
 | deathmatch | 4 bots, first to 5 kills | "5 kills reached", 11 kills, server limit 15 |
-| capture | 2v2, first to 25 points | area captured, 25 points reached (a separate graphical run saw 4 ownership changes) |
-| weapongame | 4 bots | several players advanced through the ladder; "Final weapon kill" ended the match |
+| capture|weapongame|weapons|agents|agentban` | `Logs | 2v2, first to 25 points | area captured, 25 points reached (a separate graphical run saw 4 ownership changes) |
+| capture|weapongame|weapons|agents|agentban` | `Logs | 4 bots | several players advanced through the ladder; "Final weapon kill" ended the match |
 
 ### Load test — 15 players, Deathmatch, 150 s
 Server avg 8.34 ms (120 Hz cap), p99 ≤ 8.6 ms, every client 900 inputs per 15 s, 344 kills, 56 ability uses,
@@ -174,7 +205,7 @@ Dedicated server + 10 headless fighting bots. Server samples every 15 s:
 
 ### Graphical client (visual verification)
 
-A windowed client (1280×720) driven by the test bot captured screenshots during real matches against the dedicated
+A windowed client (1280×720) driven by the test bot capture|weapongame|weapons|agents|agentban` | `Logsd screenshots during real matches against the dedicated
 server: main menu, HUD (vitals, ammo, abilities, timer/score), defuse prompt with progress bar, red bomb timer,
 kill feed, round-result banner, spectator overview after death, victory screen with scoreboard, team-coloured
 Wayblocker, remote player model. Frame time at 1280×720: avg 2.5–5 ms (200–400 fps), p99 8–15 ms.

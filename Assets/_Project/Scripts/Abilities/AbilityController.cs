@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BlueHorizon.Agents;
 using BlueHorizon.Core;
 using BlueHorizon.Match;
@@ -38,10 +39,18 @@ namespace BlueHorizon.Abilities
         public bool Equals(AbilityNetState other) => charges == other.charges && cooldownEnd.Equals(other.cooldownEnd);
     }
 
+    /// <summary>Visual-only burst effects other clients see (flash light, scan pulse ring).</summary>
+    public enum AbilityBurst : byte
+    {
+        Flash = 0,
+        Pulse = 1,
+    }
+
     /// <summary>
     /// Server-validated ability activation for one player. Activation is triggered by button edges inside the
     /// player's authoritative input stream; this component checks life state, match phase, charges and cooldowns,
-    /// executes the ability definition and replicates the resulting slot state.
+    /// executes the ability definition and replicates the resulting slot state. It also delivers the status effects
+    /// abilities put on this player: blindness from flashes (owner only) and EnemyAlert marks (to the observers).
     /// </summary>
     public sealed class AbilityController : NetworkBehaviour
     {
@@ -60,6 +69,20 @@ namespace BlueHorizon.Abilities
         public event Action<AbilitySlot> Activated;
         /// <summary>Owner: the server refused an activation.</summary>
         public event Action<AbilitySlot, AbilityRejectReason> Rejected;
+        /// <summary>All peers: a flash burst or scan pulse at a position (visual/audio only).</summary>
+        public static event Action<AbilityBurst, Vector3> Burst;
+        /// <summary>Owner: this player was spotted by an EnemyAlert pulse (seconds).</summary>
+        public event Action<float> Spotted;
+
+        /// <summary>Owner: current flash blindness (presentation and test bots; the server does not enforce it).</summary>
+        public float FlashIntensity { get; private set; }
+        public float FlashDuration { get; private set; }
+        public float FlashStartTime { get; private set; } = -100f;
+        public float FlashElapsed => Time.time - FlashStartTime;
+        public bool IsBlinded => FlashElapsed < FlashDuration * 0.7f;
+        /// <summary>Observers: <see cref="Time.time"/> until which this (enemy) player is marked by EnemyAlert.</summary>
+        public float RevealedUntil { get; private set; } = -100f;
+        public bool IsRevealed => Time.time < RevealedUntil;
 
         void Awake()
         {
@@ -106,6 +129,7 @@ namespace BlueHorizon.Abilities
             MatchManager match = MatchManager.Instance;
             bool phaseAllows = match == null || match.AbilitiesAllowed;
             AbilityRejectReason reason = AbilityRules.CanActivate(definition, state, now, _avatar.IsAlive, phaseAllows);
+            if (reason == AbilityRejectReason.None && _avatar.Health.IsDowned) reason = AbilityRejectReason.Downed;
             if (reason == AbilityRejectReason.None)
                 reason = definition.Execute(new AbilityContext(_avatar, eye, aim, now));
 
@@ -126,5 +150,46 @@ namespace BlueHorizon.Abilities
 
         [Rpc(SendTo.ClientsAndHost)]
         void ActivatedRpc(AbilitySlot slot) => Activated?.Invoke(slot);
+
+        // ───────────── Status effects ─────────────
+
+        /// <summary>Server: blind this player (sent to its owner only).</summary>
+        public void ServerFlash(float intensity, float duration)
+        {
+            if (IsServer) FlashedRpc(intensity, duration);
+        }
+
+        /// <summary>Server: mark this player for the given observers (EnemyAlert) and warn its owner.</summary>
+        public void ServerReveal(List<ulong> observers, float duration)
+        {
+            if (!IsServer) return;
+            if (observers.Count > 0) RevealedRpc(duration, RpcTarget.Group(observers, RpcTargetUse.Temp));
+            SpottedRpc(duration);
+        }
+
+        public void ServerBurst(AbilityBurst kind, Vector3 position)
+        {
+            if (IsServer) BurstRpc(kind, position);
+        }
+
+        [Rpc(SendTo.Owner)]
+        void FlashedRpc(float intensity, float duration)
+        {
+            // A stronger flash replaces a weaker one that is still fading.
+            float remaining = FlashRules.Whiteness(FlashIntensity, FlashDuration, FlashElapsed);
+            if (remaining > FlashRules.Whiteness(intensity, duration, 0f)) return;
+            FlashIntensity = intensity;
+            FlashDuration = duration;
+            FlashStartTime = Time.time;
+        }
+
+        [Rpc(SendTo.SpecifiedInParams)]
+        void RevealedRpc(float duration, RpcParams rpcParams = default) => RevealedUntil = Mathf.Max(RevealedUntil, Time.time + duration);
+
+        [Rpc(SendTo.Owner)]
+        void SpottedRpc(float duration) => Spotted?.Invoke(duration);
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void BurstRpc(AbilityBurst kind, Vector3 position) => Burst?.Invoke(kind, position);
     }
 }

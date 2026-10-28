@@ -19,6 +19,8 @@ namespace BlueHorizon.Abilities
         InvalidTarget,
         AlreadyFull,
         Missing,
+        Downed,
+        NoTarget,
     }
 
     /// <summary>
@@ -26,7 +28,7 @@ namespace BlueHorizon.Abilities
     /// Charges and cooldowns are generic and handled by <see cref="AbilityRules"/>:
     ///   * maxCharges &gt; 0 — limited uses per round, restored at round start.
     ///   * maxCharges == 0 — unlimited uses gated only by the cooldown (signature abilities).
-    /// Future abilities (EnemyAlert, Flash Grenade, Revival) add a subclass and an asset; no controller changes.
+    /// New abilities (Flash Grenade, EnemyAlert, Revival in Milestone 5) add a subclass and an asset; no controller changes.
     /// </summary>
     public abstract class AbilityDefinition : ScriptableObject
     {
@@ -82,6 +84,8 @@ namespace BlueHorizon.Abilities
             AbilityRejectReason.InvalidTarget => "Invalid placement",
             AbilityRejectReason.AlreadyFull => "Already at full health",
             AbilityRejectReason.Missing => "No ability equipped",
+            AbilityRejectReason.Downed => "You are downed",
+            AbilityRejectReason.NoTarget => "No downed teammate in range",
             _ => "",
         };
     }
