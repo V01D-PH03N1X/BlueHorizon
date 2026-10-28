@@ -50,7 +50,9 @@ $modeArgs = switch ($Scenario) {
 }
 if ($Scenario -in 'deathmatch', 'capture', 'weapongame', 'weapons' -and $Bots -lt 4) { $Bots = 4 }
 $botArgs = switch ($Scenario) { 'duel' { @('-botSite', 0) } 'weapons' { @('-botLoadout', 'random') } default { @() } }
-if ($Scenario -in 'disconnect', 'reconnect' -and $Bots -lt 3) { $Bots = 3 }
+if ($Scenario -eq 'reconnect' -and $Bots -lt 3) { $Bots = 3 }
+# 2v2, so the killed bot never leaves its team empty (an empty team correctly sends the match back to warmup).
+if ($Scenario -eq 'disconnect' -and $Bots -lt 4) { $Bots = 4 }
 
 $sArgs = @('-port', $Port, '-logFile', $serverLog, '-preRoundTime', 2, '-postRoundTime', 3,
     '-plantTime', 3, '-defuseTime', $defuse, '-fuseTime', $fuse,

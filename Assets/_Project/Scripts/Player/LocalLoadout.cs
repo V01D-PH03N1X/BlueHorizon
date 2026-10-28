@@ -25,8 +25,10 @@ namespace BlueHorizon.Player
         public static void SendInitial(PlayerAvatar avatar)
         {
             string botLoadout = LaunchConfig.Current.botLoadout;
-            if (LaunchConfig.Current.bot && !string.IsNullOrEmpty(botLoadout))
+            if (LaunchConfig.Current.bot)
             {
+                // Bots never read the saved choice: PlayerPrefs are shared by every client on the PC, tests must be repeatable.
+                if (string.IsNullOrEmpty(botLoadout)) return;
                 GameContent content = GameContent.Instance;
                 if (content == null) return;
                 PlayerLoadout chosen = botLoadout == "random"
