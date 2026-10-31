@@ -1,0 +1,113 @@
+# Runs the EditMode tests and builds the Windows client, Windows dedicated server and Linux dedicated server
+# with the same Tools\ scripts used locally. Runs on a Windows runner because the game-ci Docker images do not
+# include Unity's Dedicated Server modules.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions): UNITY_USERNAME, UNITY_PASSWORD.
+# No pull_request trigger: this workflow handles Unity credentials and must not run code from forks.
+# Third-party actions are pinned to commit SHAs for the same reason.
+name: Build
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths-ignore: ['Documentation/**', '**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check Unity secrets
+        shell: pwsh
+        env:
+          UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if (-not $env:UNITY_USERNAME -or -not $env:UNITY_PASSWORD) {
+            Write-Host '::error::Set the repository secrets UNITY_USERNAME and UNITY_PASSWORD (see Documentation/TESTING.md).'
+            exit 1
+          }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Library
+          key: library-windows-${{ hashFiles('ProjectSettings/ProjectVersion.txt', 'Packages/packages-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            library-windows-${{ hashFiles('ProjectSettings/ProjectVersion.txt', 'Packages/packages-lock.json') }}-
+
+      - uses: buildalon/unity-setup@30fcbcb56c10ea5d64298e970d952b8d29bc268b # v2.6.0
+        with:
+          version-file: ProjectSettings/ProjectVersion.txt
+          modules: windows-server, linux-mono, linux-server
+          cache-installation: true
+
+      - uses: buildalon/activate-unity-license@e0d245d0787b7b9931b56ccbde3b508f6b70f1af # v2.2.2
+        with:
+          license: Personal
+          username: ${{ secrets.UNITY_USERNAME }}
+          password: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: EditMode tests
+        shell: pwsh
+        run: |
+          $env:UNITY_EDITOR = $env:UNITY_EDITOR_PATH
+          ./Tools/run-tests.ps1
+
+      - name: Build Windows client and server
+        shell: pwsh
+        run: |
+          $env:UNITY_EDITOR = $env:UNITY_EDITOR_PATH
+          ./Tools/build.ps1
+
+      - name: Build Linux server
+        shell: pwsh
+        run: |
+          $env:UNITY_EDITOR = $env:UNITY_EDITOR_PATH
+          ./Tools/build.ps1 -Target LinuxServer
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: BlueHorizon-Client-Windows
+          path: |
+            Builds/Client
+            !Builds/Client/**/*DoNotShip*/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: BlueHorizon-Server-Windows
+          path: |
+            Builds/Server
+            !Builds/Server/**/*DoNotShip*/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: BlueHorizon-Server-Linux
+          path: |
+            Builds/ServerLinux
+            !Builds/ServerLinux/**/*DoNotShip*/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Unity logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unity-logs
+          path: Logs/*.log
+          retention-days: 7

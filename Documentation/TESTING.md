@@ -26,6 +26,16 @@ spawning), `-screenshotInterval N -screenshotDir path`.
 
 Agent options: `-botAgent random|<id>` (bots), server `-unlockAgents all|<ids>`, `-banAgents <ids>`, `-downed on|off`.
 
+## Continuous integration (GitHub Actions)
+
+`.github/workflows/build.yml` runs on pushes to `main` and `feature/**`: EditMode tests, then Windows client, Windows
+server and Linux server builds through the same `Tools\` scripts. Builds appear as artifacts on the run (14 days).
+It uses a Windows runner because the game-ci Docker images do not contain Unity's Dedicated Server modules.
+The multiplayer autotests are not part of it.
+
+Set the repository secrets `UNITY_USERNAME` and `UNITY_PASSWORD` (Unity ID) under Settings > Secrets and variables >
+Actions. Credentials never go into the repository.
+
 ## Results — Milestone 5 (2026-10-28)
 
 ### EditMode — 136 / 136 passed
