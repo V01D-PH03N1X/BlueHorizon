@@ -1,0 +1,52 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9398ff6c11d5fae42993bc20258a93a8, type: 3}
+  m_Name: Lifeline
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.Agents.AgentDefinition
+  agentId: lifeline
+  codename: Kintsugi
+  callsign: Lifeline
+  realName: Aiko Mori
+  role: "Support \xB7 revives"
+  origin: Japan
+  biography: A disaster-relief paramedic who learned to work under fire. Nobody on
+    her team stays down for long.
+  unlockedByDefault: 0
+  health:
+    maxHealth: 125
+    maxArmor: 15
+    maxBarrier: 40
+    barrierRegenDelay: 4
+    barrierRegenPerSecond: 12
+  movement:
+    runSpeed: 5.1
+    sprintSpeed: 6.7
+    crouchSpeed: 2.4
+    groundAcceleration: 55
+    groundDeceleration: 45
+    airAcceleration: 8
+    jumpHeight: 1.05
+    gravity: 22
+    maxFallSpeed: 30
+    standingHeight: 1.8
+    crouchHeight: 1.2
+    radius: 0.35
+    standingEyeHeight: 1.62
+    crouchEyeHeight: 1.05
+    crouchTransitionRate: 7
+    minPitch: -85
+    maxPitch: 85
+  utility1: {fileID: 11400000, guid: 7e4b71668fddbdc47928b526d9e5715d, type: 2}
+  utility2: {fileID: 11400000, guid: a72e25f2b2e78ce47be561e3962cc229, type: 2}
+  signature: {fileID: 11400000, guid: b402394112182994bbfc71ca1c904897, type: 2}
+  accentColor: {r: 0.4, g: 1, b: 0.6, a: 1}
+  selectVoiceLine: {fileID: 0}

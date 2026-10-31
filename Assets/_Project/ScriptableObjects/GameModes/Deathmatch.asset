@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aa288d732f172044395597e901ff6ef3, type: 3}
+  m_Name: Deathmatch
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.GameModes.DeathmatchSettings
+  modeId: deathmatch
+  displayName: Deathmatch
+  description: Free-for-all. First to the kill limit wins.
+  teamSize: 15
+  maxPlayers: 15
+  minPlayersPerTeam: 2
+  freeForAll: 1
+  friendlyFire: 0
+  abilitiesEnabled: 1
+  loadoutChangesEnabled: 1
+  matchStartCountdown: 5
+  preRoundTime: 3
+  timeLimit: 600
+  postRoundTime: 0
+  matchOverTime: 12
+  respawnDelay: 3
+  scoreLimit: 25

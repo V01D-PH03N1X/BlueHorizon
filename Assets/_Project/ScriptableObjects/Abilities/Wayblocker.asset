@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c81d8989e75aba41ba0c2ff198ee629, type: 3}
+  m_Name: Wayblocker
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.Abilities.WayblockerDefinition
+  abilityId: wayblocker
+  displayName: Wayblocker
+  description: Deploy a destructible wall that blocks movement and bullets.
+  cooldown: 1
+  maxCharges: 1
+  hudColor: {r: 0.35, g: 0.75, b: 1, a: 1}
+  placementRange: 6
+  size: {x: 3.2, y: 2.1, z: 0.35}
+  maxHealth: 400
+  lifetime: 30
+  maxSlope: 25

@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa12cea0ff9852a4fafa66dd97085da0, type: 3}
+  m_Name: Laser
+  m_EditorClassIdentifier: BlueHorizon.Runtime::BlueHorizon.Attachments.AttachmentDefinition
+  attachmentId: laser
+  displayName: Laser Sight
+  slot: 1
+  damageMultiplier: 1
+  spreadMultiplier: 1
+  hipSpreadMultiplier: 0.7
+  adsSpreadMultiplier: 1
+  recoilMultiplier: 1
+  adsTimeMultiplier: 1
+  suppressesFireSound: 0
+  hidesMinimapFireIndicator: 0
+  remoteFireVolumeMultiplier: 1
+  aimFovMultiplier: 1
+  reticle: 0
+  magnified: 0
+  reticleColor: {r: 1, g: 1, b: 1, a: 1}
+  visibleLaser: 1
+  laserColor: {r: 1, g: 0.12, b: 0.08, a: 1}
+  viewmodelOffset: {x: 0.035, y: -0.03, z: 0.12}
+  viewmodelSize: {x: 0.025, y: 0.025, z: 0.08}
+  viewmodelColor: {r: 0.12, g: 0.12, b: 0.12, a: 1}

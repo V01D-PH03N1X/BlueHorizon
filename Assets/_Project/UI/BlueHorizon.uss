@@ -1,0 +1,389 @@
+/* Blue Horizon — runtime UI theme. Colours: deep navy panels, horizon blue accent, Alpha blue / Bravo orange. */
+
+.root {
+    position: absolute;
+    left: 0; top: 0; right: 0; bottom: 0;
+    -unity-font-style: normal;
+    color: rgb(232, 238, 245);
+    font-size: 16px;
+}
+
+.screen {
+    position: absolute;
+    left: 0; top: 0; right: 0; bottom: 0;
+}
+
+.hidden { display: none; }
+
+.panel {
+    background-color: rgba(10, 16, 26, 0.82);
+    border-color: rgba(90, 170, 255, 0.35);
+    border-width: 1px;
+    border-radius: 4px;
+    padding: 12px 16px;
+}
+
+.title {
+    font-size: 50px;
+    -unity-font-style: bold;
+    letter-spacing: 9px;
+    white-space: nowrap;
+    color: rgb(240, 246, 255);
+}
+
+.subtitle {
+    font-size: 16px;
+    letter-spacing: 6px;
+    color: rgb(120, 190, 255);
+    margin-bottom: 28px;
+}
+
+.heading {
+    font-size: 13px;
+    -unity-font-style: bold;
+    letter-spacing: 3px;
+    color: rgb(120, 190, 255);
+    margin-bottom: 6px;
+}
+
+.muted { color: rgb(150, 162, 178); font-size: 13px; }
+.danger { color: rgb(255, 110, 90); }
+.alpha { color: rgb(64, 158, 255); }
+.bravo { color: rgb(255, 122, 56); }
+
+/* ───── Menu ───── */
+
+.menu-screen {
+    background-color: rgba(6, 10, 18, 0.55);
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.menu-column {
+    width: 440px;
+    margin: 0 24px;
+}
+
+.field-label { font-size: 12px; letter-spacing: 2px; color: rgb(150, 162, 178); margin-top: 10px; }
+
+TextField {
+    margin: 4px 0 0 0;
+}
+
+TextField > .unity-text-field__input, .unity-base-text-field__input {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(120, 190, 255, 0.35);
+    color: rgb(240, 246, 255);
+    font-size: 16px;
+    padding: 6px 8px;
+}
+
+Button, .button {
+    background-color: rgba(64, 158, 255, 0.18);
+    border-color: rgba(120, 190, 255, 0.6);
+    border-width: 1px;
+    border-radius: 3px;
+    color: rgb(240, 246, 255);
+    font-size: 15px;
+    -unity-font-style: bold;
+    letter-spacing: 2px;
+    height: 40px;
+    margin: 8px 0 0 0;
+}
+
+Button:hover { background-color: rgba(64, 158, 255, 0.4); }
+Button:active { background-color: rgba(64, 158, 255, 0.6); }
+.button-primary { background-color: rgba(64, 158, 255, 0.55); }
+.button-primary:hover { background-color: rgba(64, 158, 255, 0.75); }
+.button-quiet { background-color: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.2); }
+
+.agent-card { margin-top: 0; }
+.menu-column-right { margin-top: 96px; }
+.agent-name { font-size: 28px; -unity-font-style: bold; letter-spacing: 4px; color: rgb(255, 176, 64); }
+.agent-meta { font-size: 13px; color: rgb(170, 182, 198); margin-bottom: 8px; }
+.agent-bio { font-size: 14px; white-space: normal; color: rgb(205, 214, 226); margin-bottom: 10px; }
+.ability-row { flex-direction: row; margin-top: 6px; }
+.ability-key { width: 26px; height: 22px; background-color: rgba(64, 158, 255, 0.25); border-radius: 3px; -unity-text-align: middle-center; -unity-font-style: bold; margin-right: 8px; font-size: 13px; }
+.ability-desc { flex-grow: 1; flex-shrink: 1; white-space: normal; font-size: 13px; color: rgb(205, 214, 226); }
+
+.status { margin-top: 12px; white-space: normal; font-size: 14px; min-height: 20px; }
+
+/* ───── HUD ───── */
+
+.scorebar {
+    position: absolute;
+    top: 14px;
+    left: 0; right: 0;
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.score-team {
+    width: 130px;
+    height: 54px;
+    background-color: rgba(10, 16, 26, 0.8);
+    -unity-text-align: middle-center;
+    font-size: 30px;
+    -unity-font-style: bold;
+}
+
+.score-team-alpha { border-bottom-width: 3px; border-bottom-color: rgb(64, 158, 255); color: rgb(110, 185, 255); }
+.score-team-bravo { border-bottom-width: 3px; border-bottom-color: rgb(255, 122, 56); color: rgb(255, 160, 110); }
+
+.score-center {
+    width: 170px;
+    height: 54px;
+    background-color: rgba(6, 10, 18, 0.92);
+    align-items: center;
+    justify-content: center;
+}
+
+.round-timer { font-size: 28px; -unity-font-style: bold; }
+.round-timer-bomb { color: rgb(255, 80, 64); }
+.phase-label { font-size: 11px; letter-spacing: 2px; color: rgb(150, 162, 178); }
+
+.side-banner {
+    position: absolute;
+    top: 76px;
+    left: 0; right: 0;
+    -unity-text-align: middle-center;
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: rgb(170, 182, 198);
+}
+
+.killfeed {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    width: 380px;
+    align-items: flex-end;
+}
+
+.killfeed-entry {
+    flex-direction: row;
+    background-color: rgba(10, 16, 26, 0.78);
+    padding: 4px 10px;
+    margin-bottom: 4px;
+    border-radius: 3px;
+    font-size: 14px;
+}
+
+.killfeed-entry-local { border-color: rgb(255, 210, 80); border-width: 1px; }
+.killfeed-weapon { color: rgb(170, 182, 198); margin: 0 8px; }
+
+.vitals {
+    position: absolute;
+    left: 24px;
+    bottom: 24px;
+    width: 300px;
+}
+
+.health-row { flex-direction: row; align-items: flex-end; }
+.health-value { font-size: 44px; -unity-font-style: bold; width: 96px; }
+.health-label { font-size: 12px; letter-spacing: 2px; color: rgb(150, 162, 178); margin-bottom: 10px; }
+
+.bar { height: 8px; background-color: rgba(255, 255, 255, 0.1); margin-top: 4px; border-radius: 2px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 2px; }
+.bar-health { background-color: rgb(235, 240, 245); }
+.bar-health-low { background-color: rgb(255, 80, 64); }
+.bar-armor { background-color: rgb(120, 200, 255); }
+.bar-barrier { background-color: rgb(90, 255, 220); }
+.bar-label-row { flex-direction: row; justify-content: space-between; margin-top: 6px; }
+.bar-label { font-size: 11px; letter-spacing: 1px; color: rgb(150, 162, 178); }
+
+.weapon-block {
+    position: absolute;
+    right: 24px;
+    bottom: 24px;
+    width: 280px;
+    align-items: flex-end;
+}
+
+.ammo { flex-direction: row; align-items: flex-end; }
+.ammo-mag { font-size: 48px; -unity-font-style: bold; }
+.ammo-reserve { font-size: 20px; color: rgb(150, 162, 178); margin-left: 6px; margin-bottom: 8px; }
+.ammo-low { color: rgb(255, 110, 90); }
+.weapon-name { font-size: 14px; letter-spacing: 3px; -unity-font-style: bold; }
+.weapon-tags { font-size: 11px; letter-spacing: 2px; color: rgb(90, 255, 220); }
+.weapon-hint { font-size: 11px; color: rgb(150, 162, 178); margin-top: 2px; }
+
+.abilities {
+    position: absolute;
+    bottom: 24px;
+    left: 0; right: 0;
+    flex-direction: row;
+    justify-content: center;
+}
+
+.ability {
+    width: 104px;
+    height: 112px;
+    padding: 8px 4px;
+    margin: 0 5px;
+    background-color: rgba(10, 16, 26, 0.82);
+    border-width: 1px;
+    border-color: rgba(120, 190, 255, 0.35);
+    border-radius: 4px;
+    align-items: center;
+    justify-content: space-between;
+    overflow: hidden;
+}
+
+.ability-unavailable { opacity: 0.45; }
+.ability-cooldown-fill { position: absolute; left: 0; right: 0; bottom: 0; background-color: rgba(64, 158, 255, 0.25); }
+.ability-slot-key { font-size: 13px; -unity-font-style: bold; color: rgb(120, 190, 255); }
+.ability-slot-name { font-size: 10px; letter-spacing: 1px; -unity-text-align: middle-center; white-space: normal; }
+.ability-slot-info { font-size: 13px; -unity-font-style: bold; }
+
+.crosshair {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 0; height: 0;
+}
+
+.cross-line { position: absolute; background-color: rgb(120, 255, 200); }
+.cross-h { height: 2px; width: 9px; top: -1px; }
+.cross-v { width: 2px; height: 9px; left: -1px; }
+.cross-dot { position: absolute; width: 2px; height: 2px; left: -1px; top: -1px; background-color: rgb(120, 255, 200); }
+
+.hitmarker {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 0; height: 0;
+}
+
+.hit-line { position: absolute; width: 12px; height: 2px; background-color: rgb(255, 255, 255); }
+.hitmarker-head .hit-line { background-color: rgb(255, 210, 80); }
+.hitmarker-kill .hit-line { background-color: rgb(255, 80, 64); width: 16px; }
+
+.prompt {
+    position: absolute;
+    top: 58%;
+    left: 0; right: 0;
+    align-items: center;
+}
+
+.prompt-text {
+    background-color: rgba(10, 16, 26, 0.75);
+    padding: 6px 14px;
+    border-radius: 3px;
+    font-size: 15px;
+    letter-spacing: 1px;
+}
+
+.progress { width: 260px; height: 6px; background-color: rgba(255, 255, 255, 0.15); margin-top: 6px; border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background-color: rgb(255, 176, 64); }
+
+.announcement {
+    position: absolute;
+    top: 22%;
+    left: 0; right: 0;
+    align-items: center;
+}
+
+.announcement-title { font-size: 46px; -unity-font-style: bold; letter-spacing: 8px; -unity-text-align: middle-center; }
+.announcement-sub { font-size: 18px; letter-spacing: 3px; color: rgb(205, 214, 226); -unity-text-align: middle-center; margin-top: 4px; }
+
+.toast {
+    position: absolute;
+    top: 64%;
+    left: 0; right: 0;
+    -unity-text-align: middle-center;
+    font-size: 14px;
+    color: rgb(255, 176, 64);
+}
+
+.overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+.damage-overlay { background-color: rgba(255, 30, 20, 0); }
+.smoke-overlay { background-color: rgba(190, 196, 202, 0); }
+.dead-overlay { background-color: rgba(0, 0, 0, 0.25); }
+
+.dead-banner {
+    position: absolute;
+    bottom: 120px;
+    left: 0; right: 0;
+    -unity-text-align: middle-center;
+    font-size: 18px;
+    letter-spacing: 4px;
+    color: rgb(255, 120, 100);
+}
+
+/* ───── Scoreboard / pause / victory ───── */
+
+.center-screen {
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-dim { background-color: rgba(4, 8, 14, 0.6); }
+
+.scoreboard { width: 760px; }
+.scoreboard-team { margin-bottom: 14px; }
+.scoreboard-header { flex-direction: row; padding: 4px 8px; font-size: 12px; letter-spacing: 2px; color: rgb(150, 162, 178); }
+.scoreboard-row { flex-direction: row; padding: 5px 8px; background-color: rgba(255, 255, 255, 0.04); margin-bottom: 2px; font-size: 15px; }
+.scoreboard-row-local { background-color: rgba(255, 210, 80, 0.14); }
+.scoreboard-row-dead { opacity: 0.5; }
+.col-name { flex-grow: 1; }
+.col-num { width: 70px; -unity-text-align: middle-right; }
+.col-status { width: 90px; -unity-text-align: middle-right; font-size: 12px; color: rgb(255, 176, 64); }
+
+.pause { width: 460px; }
+.setting-row { flex-direction: row; align-items: center; margin-top: 10px; }
+.setting-label { width: 150px; font-size: 13px; letter-spacing: 1px; color: rgb(190, 200, 214); }
+.setting-control { flex-grow: 1; }
+.setting-value { width: 50px; -unity-text-align: middle-right; font-size: 13px; }
+
+Slider { margin: 0; }
+
+.victory-screen { justify-content: flex-start; padding-top: 90px; }
+.victory-title { font-size: 72px; -unity-font-style: bold; letter-spacing: 14px; -unity-text-align: middle-center; }
+.victory-score { font-size: 32px; -unity-text-align: middle-center; margin-top: 6px; }
+.victory-sub { font-size: 14px; -unity-text-align: middle-center; color: rgb(170, 182, 198); margin-top: 10px; }
+
+.connecting-text { font-size: 22px; letter-spacing: 4px; -unity-text-align: middle-center; }
+
+/* ───── Optics (Milestone 4) ───── */
+
+.scope-overlay { flex-direction: row; }
+.scope-bar { flex-grow: 1; background-color: rgb(0, 0, 0); }
+.scope-lens { flex-shrink: 0; -unity-background-scale-mode: stretch-to-fill; }
+.scope-line { position: absolute; background-color: rgba(0, 0, 0, 0.9); }
+.scope-line-h { left: 3%; right: 3%; top: 50%; height: 2px; margin-top: -1px; }
+.scope-line-v { top: 3%; bottom: 3%; left: 50%; width: 2px; margin-left: -1px; }
+.scope-center { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin-left: -3px; margin-top: -3px; border-radius: 3px; background-color: rgb(255, 40, 30); }
+
+.reticle { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.reticle-dot { position: absolute; width: 6px; height: 6px; left: -3px; top: -3px; border-radius: 3px; background-color: rgb(255, 40, 30); }
+.reticle-ring { position: absolute; width: 34px; height: 34px; left: -17px; top: -17px; border-radius: 17px; border-width: 2px; border-color: rgb(255, 40, 30); }
+.reticle-cross { position: absolute; left: 0; top: 0; }
+.reticle-cross-h { position: absolute; width: 16px; height: 2px; left: -8px; top: -1px; }
+.reticle-cross-v { position: absolute; width: 2px; height: 16px; left: -1px; top: -8px; }
+
+/* ───── Loadout (Milestone 4) ───── */
+
+.loadout { width: 980px; }
+.loadout-slot { margin-top: 10px; padding: 8px 10px; background-color: rgba(255, 255, 255, 0.03); border-radius: 3px; }
+.loadout-slot-title { font-size: 13px; letter-spacing: 3px; color: rgb(255, 176, 64); -unity-font-style: bold; }
+.loadout-choices { flex-direction: row; flex-wrap: wrap; flex-grow: 1; align-items: center; }
+.loadout-choice { height: 30px; font-size: 12px; letter-spacing: 1px; margin: 4px 6px 0 0; padding: 0 10px; background-color: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.2); }
+.loadout-choice-selected { background-color: rgba(64, 158, 255, 0.55); border-color: rgb(120, 190, 255); }
+.loadout-stats { font-size: 12px; color: rgb(170, 182, 198); margin-top: 6px; }
+.loadout-attachment-row { flex-direction: row; align-items: center; margin-top: 2px; }
+.loadout-attachment-label { width: 120px; font-size: 11px; letter-spacing: 2px; color: rgb(150, 162, 178); }
+.loadout-status { margin-top: 10px; white-space: normal; }
+.loadout-buttons { flex-direction: row; justify-content: flex-end; }
+.loadout-button { width: 160px; margin-left: 8px; }
+
+/* Milestone 5: flash, downed state, world markers */
+.flash-overlay { background-color: rgba(255, 255, 248, 0); }
+.downed-overlay { background-color: rgba(120, 0, 0, 0.28); border-width: 60px; border-color: rgba(90, 0, 0, 0.45); }
+.world-marker { position: absolute; width: 80px; align-items: center; }
+.world-marker-icon { width: 14px; height: 14px; rotate: 45deg; border-width: 2px; border-color: rgb(255, 255, 255); }
+.world-marker-label { font-size: 11px; letter-spacing: 1px; -unity-font-style: bold; margin-top: 4px; -unity-text-align: middle-center; }
+.world-marker-enemy .world-marker-icon { background-color: rgba(255, 60, 50, 0.85); border-color: rgb(255, 200, 190); }
+.world-marker-enemy .world-marker-label { color: rgb(255, 120, 110); }
+.world-marker-downed .world-marker-icon { background-color: rgba(70, 230, 120, 0.85); border-color: rgb(210, 255, 220); }
+.world-marker-downed .world-marker-label { color: rgb(120, 255, 160); }
