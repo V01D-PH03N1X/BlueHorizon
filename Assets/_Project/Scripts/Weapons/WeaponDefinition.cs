@@ -136,8 +136,7 @@ namespace BlueHorizon.Weapons
         public AttachmentDefinition fixedOptic;
 
         [Header("Presentation")]
-        public Color viewmodelColor = new(0.2f, 0.22f, 0.25f);
-        public Vector3 viewmodelSize = new(0.06f, 0.1f, 0.35f);
+        public WeaponModel modelPrefab;
         public float fireSoundPitch = 1f;
         public float fireSoundVolume = 1f;
 

@@ -106,6 +106,8 @@ namespace BlueHorizon.UI
                 _rig.VisualRoot.localRotation = alive ? Quaternion.identity : Quaternion.Euler(-85f, 0f, 0f);
                 _rig.VisualRoot.localPosition = alive ? Vector3.zero : new Vector3(0f, 0.25f, 0f);
                 _rig.VisualRoot.gameObject.SetActive(alive || _avatar.Team != Team.None);
+                _rig.ShowWeapon(_avatar.WeaponInSlot(_sim.ActiveSlot));
+                _rig.SetWeaponReloading(_sim.IsReloading);
             }
 
             MatchManager match = MatchManager.Instance;
@@ -159,7 +161,7 @@ namespace BlueHorizon.UI
 
         void OnRemoteShot(Vector3 origin, Vector3 end, byte slot, bool suppressed, bool hitPlayer)
         {
-            Vector3 muzzle = _rig.WeaponVisual != null ? _rig.WeaponVisual.position + _rig.WeaponVisual.forward * 0.3f : origin;
+            Vector3 muzzle = _rig.WeaponMuzzle != null ? _rig.WeaponMuzzle.position : origin;
             WeaponStats stats = _avatar.StatsForSlot(slot);
             WeaponDefinition weapon = stats.Definition;
             float volume = (suppressed ? 0.35f : 1f) * (weapon != null ? weapon.fireSoundVolume : 1f);
@@ -179,6 +181,7 @@ namespace BlueHorizon.UI
             }
             Effects.Instance?.MuzzleFlash(muzzle, suppressed);
             Effects.Instance?.Impact(end, hitPlayer);
+            _rig.PlayWeaponFire();
         }
 
         void OnAbilityActivated(AbilitySlot slot)

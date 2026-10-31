@@ -59,7 +59,6 @@ MonoBehaviour:
   - {fileID: 11400000, guid: f19b753b9d7896c43aae763a970dab21, type: 2}
   - {fileID: 11400000, guid: 4ec7f84601faae24ebaba599db569d38, type: 2}
   fixedOptic: {fileID: 0}
-  viewmodelColor: {r: 0.2, g: 0.24, b: 0.2, a: 1}
-  viewmodelSize: {x: 0.055, y: 0.1, z: 0.55}
+  modelPrefab: {fileID: 8694254396267330156, guid: 41661bfbe69193844b5bc80c70ad6e6b, type: 3}
   fireSoundPitch: 0.85
   fireSoundVolume: 1.1

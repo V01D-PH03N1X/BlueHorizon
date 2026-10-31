@@ -10,7 +10,9 @@ namespace BlueHorizon.UI
     /// <summary>
     /// Draws the visible beam and dot of a laser attachment. Runs on every client for every player, so a laser gives
     /// its user away to opponents (that is its trade-off for the tighter hip-fire spread). Presentation only.
+    /// Runs after GameCamera and PlayerPresenter have posed the weapon, otherwise the beam starts where it was last frame.
     /// </summary>
+    [DefaultExecutionOrder(100)]
     public sealed class LaserSight : MonoBehaviour
     {
         static readonly RaycastHit[] Hits = new RaycastHit[12];
@@ -56,10 +58,10 @@ namespace BlueHorizon.UI
         {
             if (_avatar == null || !_avatar.IsSpawned) return;
             PlayerSimulation sim = _avatar.Simulation;
-            WeaponStats stats = _avatar.StatsForSlot(sim.Weapons.activeSlot);
+            WeaponStats stats = _avatar.StatsForSlot(sim.ActiveSlot);
             AttachmentDefinition laser = stats.Laser;
             // The beam is off while reloading (the weapon points at the floor).
-            bool on = laser != null && _avatar.IsAlive && !sim.Weapons.IsReloading;
+            bool on = laser != null && _avatar.IsAlive && !sim.IsReloading;
             SetVisible(on);
             if (!on) return;
 
@@ -75,7 +77,7 @@ namespace BlueHorizon.UI
             Vector3 eye = _avatar.IsOwner ? sim.RenderEyePosition : _rig.HeadVisual.position;
             Vector3 origin;
             if (_avatar.IsOwner && GameCamera.Instance != null) origin = GameCamera.Instance.LaserOrigin;
-            else origin = _rig.WeaponVisual != null ? _rig.WeaponVisual.position + _rig.WeaponVisual.forward * 0.25f : eye;
+            else origin = _rig.WeaponMuzzle != null ? _rig.WeaponMuzzle.position : eye;
 
             // The beam converges on what the player aims at.
             Vector3 end = Trace(eye, aim, out bool hit);

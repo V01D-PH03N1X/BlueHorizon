@@ -90,6 +90,13 @@ namespace BlueHorizon.EditorTools
             SetCompatibility(dmr, WeaponCategory.PrecisionRifle, null, suppressor, laser, redDot, holo, scope4);
             SetCompatibility(sniper, WeaponCategory.SniperRifle, scope8, suppressor, laser);
 
+            SetModel(rifle, "AssaultRifle");
+            SetModel(pistol, "Pistol");
+            SetModel(revolver, "Revolver");
+            SetModel(shotgun, "Shotgun");
+            SetModel(dmr, "PrecisionRifle");
+            SetModel(sniper, "SniperRifle", builtInOptic: true);
+
             SmokeGrenadeDefinition smoke = LoadOrCreate<SmokeGrenadeDefinition>(Data + "/Abilities/SmokeGrenade.asset", out bool newSmoke);
             if (newSmoke) ConfigureSmoke(smoke);
             WayblockerDefinition wall = LoadOrCreate<WayblockerDefinition>(Data + "/Abilities/Wayblocker.asset", out bool newWall);
@@ -246,8 +253,6 @@ namespace BlueHorizon.EditorTools
             w.maxRange = 200f;
             w.spread = new SpreadSettings { baseSpread = 0.15f, movingSpread = 2.5f, airborneSpread = 6f, bloomPerShot = 0.35f, maxBloom = 3f, crouchMultiplier = 0.7f };
             w.recoil = new RecoilSettings { verticalPerShot = 0.55f, maxVertical = 5f, horizontalAmplitude = 0.6f, resetTime = 0.4f, recoveryRate = 14f };
-            w.viewmodelColor = new Color(0.16f, 0.18f, 0.2f);
-            w.viewmodelSize = new Vector3(0.06f, 0.1f, 0.45f);
             EditorUtility.SetDirty(w);
         }
 
@@ -267,8 +272,6 @@ namespace BlueHorizon.EditorTools
             w.maxRange = 120f;
             w.spread = new SpreadSettings { baseSpread = 0.25f, movingSpread = 1.6f, airborneSpread = 4f, bloomPerShot = 0.5f, maxBloom = 2.5f, crouchMultiplier = 0.8f };
             w.recoil = new RecoilSettings { verticalPerShot = 1.2f, maxVertical = 4f, horizontalAmplitude = 0.3f, resetTime = 0.5f, recoveryRate = 12f };
-            w.viewmodelColor = new Color(0.2f, 0.2f, 0.22f);
-            w.viewmodelSize = new Vector3(0.05f, 0.12f, 0.22f);
             EditorUtility.SetDirty(w);
         }
 
@@ -294,6 +297,12 @@ namespace BlueHorizon.EditorTools
             EditorUtility.SetDirty(w);
         }
 
+        static void SetModel(WeaponDefinition w, string name, bool builtInOptic = false)
+        {
+            w.modelPrefab = WeaponModelFactory.Build(name, builtInOptic);
+            EditorUtility.SetDirty(w);
+        }
+
         // Milestone 4 values are a first balance proposal (see Documentation/WEAPON_BALANCING.md), not playtested.
 
         static void ConfigureRevolver(WeaponDefinition w)
@@ -316,8 +325,6 @@ namespace BlueHorizon.EditorTools
             w.adsSpreadMultiplier = 0.5f;
             w.adsMoveSpeedMultiplier = 0.8f;
             w.adsFovMultiplier = 0.9f;
-            w.viewmodelColor = new Color(0.32f, 0.3f, 0.28f);
-            w.viewmodelSize = new Vector3(0.055f, 0.12f, 0.27f);
             w.fireSoundPitch = 0.75f;
             w.fireSoundVolume = 1.15f;
             EditorUtility.SetDirty(w);
@@ -346,8 +353,6 @@ namespace BlueHorizon.EditorTools
             w.adsSpreadMultiplier = 0.8f;
             w.adsMoveSpeedMultiplier = 0.8f;
             w.adsFovMultiplier = 0.92f;
-            w.viewmodelColor = new Color(0.24f, 0.2f, 0.16f);
-            w.viewmodelSize = new Vector3(0.07f, 0.1f, 0.5f);
             w.fireSoundPitch = 0.6f;
             w.fireSoundVolume = 1.3f;
             EditorUtility.SetDirty(w);
@@ -373,8 +378,6 @@ namespace BlueHorizon.EditorTools
             w.adsSpreadMultiplier = 0.3f;
             w.adsMoveSpeedMultiplier = 0.7f;
             w.adsFovMultiplier = 0.85f;
-            w.viewmodelColor = new Color(0.2f, 0.24f, 0.2f);
-            w.viewmodelSize = new Vector3(0.055f, 0.1f, 0.55f);
             w.fireSoundPitch = 0.85f;
             w.fireSoundVolume = 1.1f;
             EditorUtility.SetDirty(w);
@@ -401,8 +404,6 @@ namespace BlueHorizon.EditorTools
             w.adsSpreadMultiplier = 0.015f;
             w.adsMoveSpeedMultiplier = 0.5f;
             w.adsFovMultiplier = 0.9f;
-            w.viewmodelColor = new Color(0.14f, 0.16f, 0.14f);
-            w.viewmodelSize = new Vector3(0.06f, 0.1f, 0.65f);
             w.fireSoundPitch = 0.55f;
             w.fireSoundVolume = 1.4f;
             EditorUtility.SetDirty(w);

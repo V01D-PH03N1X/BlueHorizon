@@ -1,5 +1,6 @@
 using BlueHorizon.Combat;
 using BlueHorizon.Core;
+using BlueHorizon.Weapons;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -18,9 +19,14 @@ namespace BlueHorizon.Player
         public Transform HeadVisual { get; private set; }
         public Transform WeaponVisual { get; private set; }
         public Transform BombVisual { get; private set; }
+        /// <summary>Where the third-person weapon's shots and laser start.</summary>
+        public Transform WeaponMuzzle => _weaponModel != null ? _weaponModel.muzzle : WeaponVisual;
         public Renderer[] BodyRenderers { get; private set; }
         public Renderer VisorRenderer { get; private set; }
         public bool HasVisuals => VisualRoot != null;
+
+        WeaponDefinition _shownWeapon;
+        WeaponModel _weaponModel;
 
         public static bool IsHeadless => SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null;
 
@@ -100,7 +106,6 @@ namespace BlueHorizon.Player
             weapon.SetParent(head, false);
             weapon.localPosition = new Vector3(0.22f, -0.28f, 0.3f);
             WeaponVisual = weapon;
-            Primitive(PrimitiveType.Cube, "Gun", weapon, Vector3.zero, new Vector3(0.07f, 0.11f, 0.5f), lit).sharedMaterial.color = new Color(0.12f, 0.13f, 0.15f);
 
             BombVisual = Primitive(PrimitiveType.Cube, "Bomb", VisualRoot, new Vector3(0f, 1.05f, -0.36f), new Vector3(0.3f, 0.36f, 0.14f), emissive).transform;
             BombVisual.gameObject.SetActive(false);
@@ -120,6 +125,26 @@ namespace BlueHorizon.Player
             if (material != null) r.sharedMaterial = new Material(material);
             r.shadowCastingMode = ShadowCastingMode.On;
             return r;
+        }
+
+        /// <summary>Swaps the third-person weapon model when the held weapon changes.</summary>
+        public void ShowWeapon(WeaponDefinition weapon)
+        {
+            if (weapon == _shownWeapon) return;
+            _shownWeapon = weapon;
+            if (_weaponModel != null) Destroy(_weaponModel.gameObject);
+            _weaponModel = weapon != null && weapon.modelPrefab != null ? Instantiate(weapon.modelPrefab, WeaponVisual, false) : null;
+            if (_weaponModel != null) _weaponModel.PlayEquip(weapon);
+        }
+
+        public void SetWeaponReloading(bool reloading)
+        {
+            if (_weaponModel != null) _weaponModel.SetReloading(reloading, _shownWeapon);
+        }
+
+        public void PlayWeaponFire()
+        {
+            if (_weaponModel != null) _weaponModel.PlayFire(_shownWeapon);
         }
 
         /// <summary>Scales hitboxes and visuals for crouching (1 = standing).</summary>

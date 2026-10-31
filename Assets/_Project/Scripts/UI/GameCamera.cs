@@ -8,7 +8,7 @@ using UnityEngine;
 namespace BlueHorizon.UI
 {
     /// <summary>
-    /// Local camera: first-person view with a placeholder viewmodel while alive; spectates a living teammate
+    /// Local camera: first-person view with the weapon viewmodel while alive; spectates a living teammate
     /// (or the map overview) while dead. Owns no gameplay state.
     /// </summary>
     [RequireComponent(typeof(Camera))]
@@ -29,7 +29,9 @@ namespace BlueHorizon.UI
 
         Transform _viewmodel;
         Transform _model;
+        WeaponModel _weaponModel;
         Transform _muzzle;
+        Transform _mount;
         Transform _laserEmitter;
         byte _shownSlot = 255;
         PlayerLoadout _shownLoadout;
@@ -88,80 +90,34 @@ namespace BlueHorizon.UI
             _viewmodel = new GameObject("Viewmodel").transform;
             _viewmodel.SetParent(transform, false);
             _viewmodel.localPosition = RestPosition;
-            _muzzle = new GameObject("Muzzle").transform;
-            _muzzle.SetParent(_viewmodel, false);
             _viewmodel.gameObject.SetActive(false);
         }
 
         static readonly Vector3 RestPosition = new(0.17f, -0.16f, 0.34f);
 
-        /// <summary>
-        /// Placeholder weapon model assembled from primitives. The silhouette follows the weapon category
-        /// (receiver, barrel, grip/magazine, stock, iron sight); fitted attachments are added from their data.
-        /// </summary>
+        /// <summary>Instantiates the weapon's model and adds fitted attachments from their data at the model's anchors.</summary>
         void RebuildModel(WeaponDefinition def, int slot)
         {
             if (_model != null) Destroy(_model.gameObject);
             _model = new GameObject("Model").transform;
             _model.SetParent(_viewmodel, false);
             _laserEmitter = null;
+            _sightHeight = 0f;
+            _weaponModel = null;
+            _muzzle = null;
+            if (def == null || def.modelPrefab == null) return;
 
-            Vector3 s = def != null ? def.viewmodelSize : new Vector3(0.05f, 0.09f, 0.3f);
-            Color body = def != null ? def.viewmodelColor : new Color(0.2f, 0.2f, 0.22f);
-            Color dark = Color.Lerp(body, Color.black, 0.45f);
-            WeaponCategory category = def != null ? def.category : WeaponCategory.Pistol;
-            bool longGun = category is WeaponCategory.AssaultRifle or WeaponCategory.Shotgun or WeaponCategory.PrecisionRifle or WeaponCategory.SniperRifle;
-            float barrelLength = category switch
-            {
-                WeaponCategory.SniperRifle => s.z * 0.7f,
-                WeaponCategory.PrecisionRifle => s.z * 0.55f,
-                WeaponCategory.Shotgun => s.z * 0.35f,
-                WeaponCategory.Revolver => s.z * 0.4f,
-                WeaponCategory.AssaultRifle => s.z * 0.45f,
-                _ => s.z * 0.15f,
-            };
-            float barrelWidth = category == WeaponCategory.Shotgun ? s.x * 0.55f : s.x * 0.32f;
-            float barrelY = s.y * 0.08f;
+            WeaponModel model = Instantiate(def.modelPrefab, _model, false);
+            _weaponModel = model;
+            _mount = model.mount;
+            foreach (Renderer r in model.GetComponentsInChildren<Renderer>())
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-            Part(PrimitiveType.Cube, body, Vector3.zero, new Vector3(s.x, s.y * 0.5f, s.z));
-            Part(PrimitiveType.Cube, dark, new Vector3(0f, barrelY, s.z * 0.5f + barrelLength * 0.5f), new Vector3(barrelWidth, barrelWidth, barrelLength));
-            // Grip.
-            Part(PrimitiveType.Cube, dark, new Vector3(0f, -s.y * 0.42f, longGun ? s.z * 0.12f : -s.z * 0.18f), new Vector3(s.x * 0.75f, s.y * 0.75f, s.x * 1.2f));
+            Vector3 sight = model.sight.localPosition;
+            Vector3 muzzle = model.muzzle.localPosition;
+            AttachmentDefinition optic = _local != null ? _local.StatsForSlot(slot).Optic : def.fixedOptic;
+            _sightHeight = sight.y;
 
-            switch (category)
-            {
-                case WeaponCategory.Revolver:
-                    // Cylinder.
-                    Transform cyl = Part(PrimitiveType.Cylinder, dark, new Vector3(0f, barrelY * 0.5f, s.z * 0.1f), new Vector3(s.x * 1.3f, s.z * 0.12f, s.x * 1.3f));
-                    cyl.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                    break;
-                case WeaponCategory.Shotgun:
-                    // Pump under the barrel, stock.
-                    Part(PrimitiveType.Cube, body, new Vector3(0f, -s.y * 0.12f, s.z * 0.45f), new Vector3(s.x * 0.8f, s.y * 0.3f, s.z * 0.3f));
-                    Part(PrimitiveType.Cube, body, new Vector3(0f, -s.y * 0.08f, -s.z * 0.62f), new Vector3(s.x * 0.85f, s.y * 0.6f, s.z * 0.3f));
-                    break;
-                case WeaponCategory.AssaultRifle:
-                case WeaponCategory.PrecisionRifle:
-                case WeaponCategory.SniperRifle:
-                    // Magazine, stock.
-                    float magLength = category == WeaponCategory.SniperRifle ? 0.45f : category == WeaponCategory.PrecisionRifle ? 0.5f : 0.55f;
-                    Part(PrimitiveType.Cube, dark, new Vector3(0f, -s.y * 0.38f, -s.z * 0.15f), new Vector3(s.x * 0.7f, s.y * magLength, s.x * 0.9f));
-                    Part(PrimitiveType.Cube, body, new Vector3(0f, -s.y * 0.05f, -s.z * 0.62f), new Vector3(s.x * 0.85f, s.y * 0.55f, s.z * 0.3f));
-                    if (category == WeaponCategory.SniperRifle)
-                    {
-                        // Bolt handle.
-                        Part(PrimitiveType.Cube, dark, new Vector3(s.x * 0.7f, s.y * 0.05f, -s.z * 0.12f), new Vector3(s.x * 0.8f, s.x * 0.25f, s.x * 0.25f));
-                    }
-                    break;
-            }
-
-            // Iron sight (hidden under an optic).
-            AttachmentDefinition optic = _local != null ? _local.StatsForSlot(slot).Optic : def != null ? def.fixedOptic : null;
-            _sightHeight = s.y * 0.35f;
-            if (optic == null)
-                Part(PrimitiveType.Cube, dark, new Vector3(0f, s.y * 0.35f, s.z * 0.05f), new Vector3(s.x * 0.5f, s.y * 0.25f, s.z * 0.2f));
-
-            float muzzleZ = s.z * 0.5f + barrelLength;
             for (int a = 0; a < PlayerLoadout.AttachmentSlots; a++)
             {
                 AttachmentDefinition att = a == (int)AttachmentSlot.Optic ? optic : _local != null ? _local.AttachmentIn(slot, (AttachmentSlot)a) : null;
@@ -171,12 +127,12 @@ namespace BlueHorizon.UI
                 switch (att.slot)
                 {
                     case AttachmentSlot.Muzzle:
-                        Transform sup = Part(PrimitiveType.Cylinder, color, new Vector3(0f, barrelY, muzzleZ + size.z * 0.5f), new Vector3(size.x, size.z * 0.5f, size.y));
+                        Transform sup = Part(PrimitiveType.Cylinder, color, muzzle + new Vector3(0f, 0f, size.z * 0.5f), new Vector3(size.x, size.z * 0.5f, size.y));
                         sup.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                        muzzleZ += size.z;
+                        muzzle.z += size.z;
                         break;
                     case AttachmentSlot.Underbarrel:
-                        Vector3 pos = new(att.viewmodelOffset.x * 0.5f, -s.y * 0.2f, s.z * 0.5f + barrelLength * 0.25f);
+                        Vector3 pos = model.underbarrel.localPosition + new Vector3(att.viewmodelOffset.x * 0.5f, 0f, 0f);
                         Part(PrimitiveType.Cube, color, pos, size);
                         if (att.visibleLaser)
                         {
@@ -185,33 +141,36 @@ namespace BlueHorizon.UI
                         }
                         break;
                     case AttachmentSlot.Optic:
-                        float height = s.y * 0.25f + size.y * 0.5f;
+                        if (model.builtInOptic) break;
+                        float height = sight.y + size.y * 0.5f;
                         if (att.magnified)
                         {
-                            Transform tube = Part(PrimitiveType.Cylinder, color, new Vector3(0f, height + 0.005f, s.z * 0.02f), new Vector3(size.x, size.z * 0.5f, size.y));
+                            Transform tube = Part(PrimitiveType.Cylinder, color, new Vector3(0f, height + 0.005f, sight.z), new Vector3(size.x, size.z * 0.5f, size.y));
                             tube.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                            Part(PrimitiveType.Cube, color, new Vector3(0f, s.y * 0.25f + 0.004f, s.z * 0.02f), new Vector3(s.x * 0.4f, 0.012f, size.z * 0.5f));
+                            Part(PrimitiveType.Cube, color, new Vector3(0f, sight.y + 0.004f, sight.z), new Vector3(0.02f, 0.012f, size.z * 0.5f));
                         }
                         else
                         {
                             // Open frame: base and hood; the reticle is drawn by the HUD at screen centre.
-                            Part(PrimitiveType.Cube, color, new Vector3(0f, s.y * 0.25f + 0.006f, 0f), new Vector3(size.x, 0.012f, size.z));
-                            Part(PrimitiveType.Cube, color, new Vector3(0f, height + size.y * 0.35f, size.z * 0.3f), new Vector3(size.x, 0.008f, size.z * 0.3f));
-                            Part(PrimitiveType.Cube, color, new Vector3(-size.x * 0.45f, height, size.z * 0.3f), new Vector3(0.006f, size.y * 0.8f, size.z * 0.3f));
-                            Part(PrimitiveType.Cube, color, new Vector3(size.x * 0.45f, height, size.z * 0.3f), new Vector3(0.006f, size.y * 0.8f, size.z * 0.3f));
+                            Part(PrimitiveType.Cube, color, new Vector3(0f, sight.y + 0.006f, sight.z), new Vector3(size.x, 0.012f, size.z));
+                            Part(PrimitiveType.Cube, color, new Vector3(0f, height + size.y * 0.35f, sight.z + size.z * 0.3f), new Vector3(size.x, 0.008f, size.z * 0.3f));
+                            Part(PrimitiveType.Cube, color, new Vector3(-size.x * 0.45f, height, sight.z + size.z * 0.3f), new Vector3(0.006f, size.y * 0.8f, size.z * 0.3f));
+                            Part(PrimitiveType.Cube, color, new Vector3(size.x * 0.45f, height, sight.z + size.z * 0.3f), new Vector3(0.006f, size.y * 0.8f, size.z * 0.3f));
                         }
                         _sightHeight = height;
                         break;
                 }
             }
-            _muzzle.localPosition = new Vector3(0f, barrelY, muzzleZ);
+            _muzzle = new GameObject("MuzzleEnd").transform;
+            _muzzle.SetParent(_mount, false);
+            _muzzle.localPosition = muzzle;
         }
 
         Transform Part(PrimitiveType type, Color color, Vector3 position, Vector3 scale)
         {
             GameObject go = GameObject.CreatePrimitive(type);
             DestroyImmediate(go.GetComponent<Collider>());
-            go.transform.SetParent(_model, false);
+            go.transform.SetParent(_mount, false);
             go.transform.localPosition = position;
             go.transform.localScale = scale;
             var r = go.GetComponent<Renderer>();
@@ -225,6 +184,7 @@ namespace BlueHorizon.UI
         public void Kick(WeaponDefinition weapon)
         {
             if (weapon == null) return;
+            if (_weaponModel != null) _weaponModel.PlayFire(weapon);
             float kick = weapon.category switch
             {
                 WeaponCategory.Shotgun or WeaponCategory.SniperRifle => 1f,
@@ -278,19 +238,19 @@ namespace BlueHorizon.UI
                 _shownLoadout = loadout;
                 _shownWeapon = current;
                 RebuildModel(current, w.activeSlot);
+                if (_weaponModel != null && sim.SimTime < w.equipEndTime) _weaponModel.PlayEquip(current);
             }
+            if (_weaponModel != null) _weaponModel.SetReloading(w.IsReloading, current);
 
-            // Placeholder animation: recoil kick, reload dip, equip raise, sprint lower.
+            // Reload and equip motion come from the weapon clips; the camera adds recoil kick and walking bob.
             _kick = Mathf.MoveTowards(_kick, 0f, Time.deltaTime * 6f);
-            float reload = w.IsReloading ? 1f : 0f;
-            float equip = Mathf.Clamp01((w.equipEndTime - sim.SimTime) / 0.4f);
             Vector3 v = sim.Velocity;
             float bob = sim.Grounded ? Mathf.Sin(Time.time * 9f) * Mathf.Clamp01(new Vector2(v.x, v.z).magnitude / 5f) * 0.008f : 0f;
             // Aiming centres the sight line on the camera axis.
             Vector3 aimPosition = new(0f, -_sightHeight - 0.012f, RestPosition.z - 0.04f);
             Vector3 rest = Vector3.Lerp(RestPosition, aimPosition, AdsBlend);
-            _viewmodel.localPosition = rest + new Vector3(0f, -reload * 0.1f - equip * 0.18f + bob * (1f - AdsBlend * 0.8f), -_kick * 0.04f);
-            _viewmodel.localRotation = Quaternion.Euler(-_kick * 6f * (1f - AdsBlend * 0.5f) + reload * 25f, 0f, reload * -15f);
+            _viewmodel.localPosition = rest + new Vector3(0f, bob * (1f - AdsBlend * 0.8f), -_kick * 0.04f);
+            _viewmodel.localRotation = Quaternion.Euler(-_kick * 6f * (1f - AdsBlend * 0.5f), 0f, 0f);
         }
 
         void Spectate()
